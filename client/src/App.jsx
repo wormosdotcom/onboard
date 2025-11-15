@@ -5,7 +5,7 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import "./App.css";
 
-const socket = io("http://localhost:4000", { autoConnect: true });
+const socket = io("https://onboard-x570.onrender.com", { autoConnect: true });
 
 const formatTime = (sec = 0) => {
   const h = Math.floor(sec / 3600);
@@ -135,7 +135,7 @@ export default function App() {
     const ep = vesselEndpoints.find((e) => e.id === endpointId);
     const current = (ep && ep.fields && ep.fields[field]) || "pending";
     const next = cycleEndpointStatus(current);
-    await fetch(`http://localhost:4000/api/endpoints/${endpointId}/field`, {
+    await fetch(`https://onboard-x570.onrender.com/api/endpoints/${endpointId}/field`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -160,7 +160,7 @@ export default function App() {
     const name = window.prompt("Vessel name:");
     if (!name) return;
     const imo = window.prompt("IMO number (optional):") || "";
-    await fetch("http://localhost:4000/api/vessels", {
+    await fetch("https://onboard-x570.onrender.com/api/vessels", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -178,7 +178,7 @@ export default function App() {
       window.prompt(
         "Task group: Network Setup / Email & Communication / Software Installations / Server Setup / Verification & Handover / General"
       ) || "General";
-    await fetch(`http://localhost:4000/api/vessels/${selectedVesselId}/tasks`, {
+    await fetch(`https://onboard-x570.onrender.com/api/vessels/${selectedVesselId}/tasks`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -190,7 +190,7 @@ export default function App() {
 
   const handleStartTask = async (taskId) => {
     if (role !== "engineer") return;
-    await fetch(`http://localhost:4000/api/tasks/${taskId}/start`, {
+    await fetch(`https://onboard-x570.onrender.com/api/tasks/${taskId}/start`, {
       method: "POST",
       headers: { "X-API-KEY": "secret-engineer-key" }
     });
@@ -198,7 +198,7 @@ export default function App() {
 
   const handleDoneTask = async (taskId) => {
     if (role !== "engineer") return;
-    await fetch(`http://localhost:4000/api/tasks/${taskId}/done`, {
+    await fetch(`https://onboard-x570.onrender.com/api/tasks/${taskId}/done`, {
       method: "POST",
       headers: { "X-API-KEY": "secret-engineer-key" }
     });
@@ -207,7 +207,7 @@ export default function App() {
   const handleDeleteTask = async (taskId) => {
     if (role !== "engineer") return;
     if (!window.confirm("Remove this task?")) return;
-    await fetch(`http://localhost:4000/api/tasks/${taskId}`, {
+    await fetch(`https://onboard-x570.onrender.com/api/tasks/${taskId}`, {
       method: "DELETE",
       headers: { "X-API-KEY": "secret-engineer-key" }
     });
@@ -216,7 +216,7 @@ export default function App() {
   const handleSaveComment = async (taskId, parentId = null) => {
     const comment = window.prompt("Enter comment:");
     if (!comment) return;
-    await fetch(`http://localhost:4000/api/tasks/${taskId}/comment`, {
+    await fetch(`https://onboard-x570.onrender.com/api/tasks/${taskId}/comment`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -228,7 +228,7 @@ export default function App() {
   const handleEditComment = async (commentId) => {
     const newText = window.prompt("Edit comment:");
     if (!newText) return;
-    await fetch(`http://localhost:4000/api/comment/${commentId}`, {
+    await fetch(`https://onboard-x570.onrender.com/api/comment/${commentId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ comment: newText })
@@ -237,7 +237,7 @@ export default function App() {
 
   const handleDeleteComment = async (commentId) => {
     if (!window.confirm("Delete this comment & all replies?")) return;
-    await fetch(`http://localhost:4000/api/comment/${commentId}`, {
+    await fetch(`https://onboard-x570.onrender.com/api/comment/${commentId}`, {
       method: "DELETE"
     });
   };
@@ -248,7 +248,7 @@ export default function App() {
     setUploadingTaskId(taskId);
     const form = new FormData();
     form.append("file", file);
-    await fetch(`http://localhost:4000/api/tasks/${taskId}/upload`, {
+    await fetch(`https://onboard-x570.onrender.com/api/tasks/${taskId}/upload`, {
       method: "POST",
       headers: {
         "X-API-KEY": "secret-engineer-key"
@@ -268,7 +268,7 @@ export default function App() {
 
     const order = newTasks.map((t) => t.id);
 
-    await fetch("http://localhost:4000/api/tasks/reorder", {
+    await fetch("https://onboard-x570.onrender.com/api/tasks/reorder", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -795,14 +795,14 @@ export default function App() {
                                                             className="thumb-preview"
                                                             onClick={() =>
                                                               setPreviewImage(
-                                                                "http://localhost:4000" +
+                                                                "https://onboard-x570.onrender.com" +
                                                                   att.url
                                                               )
                                                             }
                                                           >
                                                             <img
                                                               src={
-                                                                "http://localhost:4000" +
+                                                                "https://onboard-x570.onrender.com" +
                                                                 att.url
                                                               }
                                                               alt={att.originalName}
@@ -1025,7 +1025,7 @@ export default function App() {
                             <button
                               className="pill-btn start"
                               onClick={async () => {
-                                await fetch(`http://localhost:4000/api/vessels/${selectedVesselId}/endpoint-timer/start`, {
+                                await fetch(`https://onboard-x570.onrender.com/api/vessels/${selectedVesselId}/endpoint-timer/start`, {
                                   method: "POST",
                                   headers: { "X-API-KEY": "secret-engineer-key" }
                                 });
@@ -1037,7 +1037,7 @@ export default function App() {
                             <button
                               className="pill-btn done"
                               onClick={async () => {
-                                await fetch(`http://localhost:4000/api/vessels/${selectedVesselId}/endpoint-timer/stop`, {
+                                await fetch(`https://onboard-x570.onrender.com/api/vessels/${selectedVesselId}/endpoint-timer/stop`, {
                                   method: "POST",
                                   headers: { "X-API-KEY": "secret-engineer-key" }
                                 });
