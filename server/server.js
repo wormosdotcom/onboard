@@ -50,7 +50,7 @@ const users = [{
     id: 8, name: "Mark", role: "Client", passwordHash: bcrypt.hashSync("808080", 10) // View only, comment, photo upload
 },{
         id: 15, name: "Dewansh Gangil", role: "Admin", // aag laga dege, can edit comment modify and delete
-        passwordHash: bcrypt.hashSync("730313", 10)
+        passwordHash: bcrypt.hashSync("070313", 10)
     },{
         id: 16, name: "Kriti", role: "Admin", // aag laga dege, can edit comment modify and delete
         passwordHash: bcrypt.hashSync("365632", 10)
@@ -339,7 +339,7 @@ function createVesselWithTemplate(name, imo) {
         e.fields.bvs = "pending";
     });
 
-    addLog(id, `VESSEL_CREATED Vessel "${name}" created with template tasks.`, req);
+    addLog(id, `Vessel Created Vessel "${name}" created with template tasks.`, req);
 }
 
 seedInitial();
@@ -546,7 +546,7 @@ app.post("/api/vessels/:id/endpoint-timer/start", requireAuth, (req, res) => {
     vessel.endpointTimerEnd = null;
     vessel.endpointElapsedSeconds = 0;
 
-    addLog(vessel.id, "ENDPOINT_TIMER_STARTED", req);
+    addLog(vessel.id, "Endpoint Timer Started", req);
     broadcastSnapshot();
     res.json({ok: true});
 });
@@ -558,7 +558,7 @@ app.post("/api/vessels/:id/endpoint-timer/stop", requireAuth, (req, res) => {
     vessel.endpointTimerEnd = Date.now();
     vessel.endpointElapsedSeconds = Math.floor((vessel.endpointTimerEnd - vessel.endpointTimerStart) / 1000);
 
-    addLog(vessel.id, "ENDPOINT_TIMER_STOPPED", req);
+    addLog(vessel.id, "Endpoint Timer Stopped", req);
     broadcastSnapshot();
     res.json({ok: true, elapsed: vessel.endpointElapsedSeconds});
 });
@@ -618,7 +618,7 @@ app.post("/api/vessels", requireAuth, requireRole("Admin", "Onboard Eng"), (req,
         e.fields.bvs = "pending";
     });
 
-    addLog(vessel.id, `VESSEL_CREATED Vessel \"${name}\" created.`, req);
+    addLog(vessel.id, `Vessel Created Vessel \"${name}\" created.`, req);
     broadcastSnapshot();
     res.json(vessel);
 });
@@ -650,7 +650,7 @@ app.post("/api/vessels/:id/tasks", requireAuth, requireRole("Admin", "Remote Tea
         attachments: []
     };
     tasks.push(task);
-    addLog(vesselId, `TASK_CREATED Task "${title}" added.`);
+    addLog(vesselId, `Task Created Task "${title}" added.`);
     broadcastSnapshot();
     res.json(task);
 });
@@ -664,7 +664,7 @@ app.post("/api/endpoints/:id/field", requireAuth, (req, res) => {
 
     ep.fields[field] = value || "pending";
 
-    addLog(ep.vesselId, `ENDPOINT_UPDATED Field "${field}" updated on ${ep.label}`);
+    addLog(ep.vesselId, `Endpoint Updated Field "${field}" updated on ${ep.label}`);
     broadcastSnapshot();
 
     res.json({ok: true, endpoint: ep});
@@ -769,7 +769,7 @@ app.put("/api/comment/:id", requireAuth, requireRole('Admin'), (req, res) => {
     foundComment.text = comment;
     foundComment.timestamp = new Date().toISOString();
 
-    addLog(foundTask.vesselId, `COMMENT_EDITED Comment updated on "${foundTask.title}"`, req);
+    addLog(foundTask.vesselId, `Comment Deleted Comment updated on "${foundTask.title}"`, req);
     broadcastSnapshot();
     res.json({ok: true});
 });
@@ -805,7 +805,7 @@ app.delete(
         }
 
         // Log audit entry with IP etc (your addLog already uses req.user and req.ip)
-        addLog(id, `VESSEL_DELETED Vessel "${vessel.name}" deleted by ${req.user.name}`, req);
+        addLog(id, `Vessel Deleted Vessel "${vessel.name}" deleted by ${req.user.name}`, req);
 
         broadcastSnapshot();
         return res.json({ok: true});
@@ -834,7 +834,7 @@ app.put(
 
         addLog(
             vessel.id,
-            `VESSEL_RENAMED "${oldName}" → "${vessel.name}"`,
+            `Vessel Renamed "${oldName}" → "${vessel.name}"`,
             req
         );
 
@@ -867,7 +867,7 @@ app.delete("/api/tasks/:id", requireAuth, requireRole('Admin'), (req, res) => {
     const task = findTask(req.params.id);
     if (!task) return res.status(404).json({error: "Task not found"});
     tasks = tasks.filter((t) => String(t.id) !== String(req.params.id));
-    addLog(task.vesselId, `TASK_DELETED Task "${task.title}" removed.`, req);
+    addLog(task.vesselId, `Task Deleted Task "${task.title}" removed.`, req);
     broadcastSnapshot();
     res.json({ok: true});
 });
@@ -886,7 +886,7 @@ app.post("/api/tasks/reorder", requireAuth, (req, res) => {
     });
     const others = tasks.filter((t) => t.vesselId !== vesselId);
     tasks = others.concat(reordered);
-    addLog(vesselId, "TASKS_REORDERED Task order updated.", req);
+    addLog(vesselId, "Tasks Reordered Task order updated.", req);
     broadcastSnapshot();
     res.json({ok: true});
 });
@@ -953,7 +953,7 @@ app.post("/api/tasks/:id/done", requireAuth, requireRole("Admin", "Onboard Eng",
         return res.status(400).json({error: "Only active or paused tasks can be marked done."});
     }
     task.status = "done";
-    addLog(task.vesselId, `TASK_DONE Task "${task.title}" completed.`, req);
+    addLog(task.vesselId, `Task Done Task "${task.title}" completed.`, req);
 
     const vesselTasks = tasks.filter((t) => t.vesselId === task.vesselId);
     if (vesselTasks.every((t) => t.status === "done")) {
@@ -973,7 +973,7 @@ app.post("/api/tasks/:id/upload", requireAuth, upload.single("file"), (req, res)
     task.attachments.push({
         url, originalName: req.file.originalname, uploadedAt: new Date().toISOString()
     });
-    addLog(task.vesselId, `ATTACHMENT_ADDED Screenshot uploaded for "${task.title}".`, req);
+    addLog(task.vesselId, `Attachment Added Screenshot uploaded for "${task.title}".`, req);
     broadcastSnapshot();
     res.json({ok: true, url});
 });
@@ -1012,7 +1012,7 @@ app.post("/api/endpoints/:id/start", requireAuth, (req, res) => {
     ep.status = "in_progress";
     ep.timerRunning = true;
 
-    addLog(ep.vesselId, `ENDPOINT_STARTED Endpoint "${ep.label}" started`, req);
+    addLog(ep.vesselId, `Endpoint Started Endpoint "${ep.label}" started`, req);
     broadcastSnapshot();
     res.json({ok: true, endpoint: ep});
 });
@@ -1029,7 +1029,7 @@ app.post("/api/endpoints/:id/pause", requireAuth, (req, res) => {
     ep.status = "paused";
     ep.timerRunning = false;
 
-    addLog(ep.vesselId, `ENDPOINT_PAUSED Endpoint "${ep.label}" paused`, req);
+    addLog(ep.vesselId, `Endpoint Paused Endpoint "${ep.label}" paused`, req);
     broadcastSnapshot();
     res.json({ok: true, endpoint: ep});
 });
@@ -1052,7 +1052,7 @@ app.post("/api/endpoints/:id/done", requireAuth, (req, res) => {
     ep.status = "done";
     ep.timerRunning = false;
 
-    addLog(ep.vesselId, `ENDPOINT_DONE Endpoint "${ep.label}" marked done`, req);
+    addLog(ep.vesselId, `Endpoint Done Endpoint "${ep.label}" marked done`, req);
     broadcastSnapshot();
     res.json({ok: true, endpoint: ep});
 });
