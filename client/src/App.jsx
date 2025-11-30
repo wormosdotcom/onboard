@@ -208,7 +208,14 @@ export default function App() {
 
     const vesselEndpoints = useMemo(() => endpoints.filter((e) => e.vesselId === selectedVesselId), [endpoints, selectedVesselId]);
 
-    const totalEndpointElapsed = useMemo(() => vesselEndpoints.reduce((sum, ep) => sum + (ep.elapsedSeconds || 0), 0), [vesselEndpoints]);
+    const totalEndpointElapsed = useMemo(() => {
+        if (!vesselEndpoints.length) return 0;
+
+        return Math.max(
+            ...vesselEndpoints.map(ep => ep.elapsedSeconds || 0),
+            0
+        );
+    }, [vesselEndpoints]);
 
     const avgEndpointElapsed = useMemo(() => vesselEndpoints.length ? Math.floor(totalEndpointElapsed / vesselEndpoints.length) : 0, [totalEndpointElapsed, vesselEndpoints.length]);
 
@@ -253,7 +260,7 @@ export default function App() {
         const inProgress = vesselTasks.filter((t) => t.status === "in_progress").length;
         const delayed = vesselTasks.filter((t) => (t.elapsed_seconds || 0) > (t.deadline_seconds || 3600)).length;
         const remaining = total - done;
-        const elapsedTotal = vesselTasks.reduce((acc, t) => acc + (t.elapsed_seconds || 0), 0);
+        const elapsedTotal = Math.max(...vesselTasks.map(t => t.elapsed_seconds || 0), 0);
         return {total, done, inProgress, delayed, remaining, elapsedTotal};
     }, [vesselTasks]);
 
@@ -1153,7 +1160,7 @@ export default function App() {
                                                                             </select>
                                                                         </div>
                                                                     </div>)}
-                                                                {!isClient && <strong>{task.assignedTo || "Unassigned"}</strong>}
+                                                                {/*{!isClient && <strong>{task.assignedTo || "Unassigned"}</strong>}*/}
 
                                                             </div>
                                                         </div>
