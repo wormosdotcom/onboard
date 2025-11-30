@@ -1,10 +1,65 @@
 import express from "express";
 import http from "http";
-import { Server } from "socket.io";
+import {Server} from "socket.io";
 import cors from "cors";
 import multer from "multer";
 import path from "path";
-import { fileURLToPath } from "url";
+import {fileURLToPath} from "url";
+
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+
+const JWT_SECRET = "27389d24611f3c82ecbcf407162a22daa95f56e1";// move to env in prod
+
+// Example in-memory users list
+// password in plain text (for you to remember) is in comment; code uses only hashed version
+const users = [{
+    id: 1, name: "Main Admin", role: "ADMIN", // aag laga dege, can edit comment modify and delete
+    passwordHash: bcrypt.hashSync("admin123!", 10)
+}, {
+    id: 2, name: "Onboard Engineer 1", role: "ONBOARD_ENG", passwordHash: bcrypt.hashSync("onboard001", 10)
+}, {
+    id: 3, name: "Abhinav", role: "REMOTE_TEAM", // Task start, end and add + comment and photo upload
+    passwordHash: bcrypt.hashSync("remote001", 10)
+}, {
+    id: 10, name: "Jasline", role: "REMOTE_TEAM", // Task start, end and add + comment and photo upload
+    passwordHash: bcrypt.hashSync("remote010", 10)
+}, {
+    id: 11, name: "Nikita", role: "REMOTE_TEAM", // Task start, end and add + comment and photo upload
+    passwordHash: bcrypt.hashSync("remote011", 10)
+}, {
+    id: 12, name: "Shashank", role: "REMOTE_TEAM", // Task start, end and add + comment and photo upload
+    passwordHash: bcrypt.hashSync("remote012", 10)
+}, {
+    id: 13, name: "Anurag", role: "REMOTE_TEAM", // Task start, end and add + comment and photo upload
+    passwordHash: bcrypt.hashSync("remote013", 10)
+}, {
+    id: 14, name: "Amanjot", role: "REMOTE_TEAM", // Task start, end and add + comment and photo upload
+    passwordHash: bcrypt.hashSync("remote014", 10)
+}, {
+    id: 9, name: "Owner", role: "CLIENT", passwordHash: bcrypt.hashSync("client009", 10) // View only, comment, photo upload
+}, {
+    id: 4, name: "Sakib", role: "CLIENT", passwordHash: bcrypt.hashSync("client004", 10) // View only, comment, photo upload
+}, {
+    id: 5, name: "Pawan", role: "CLIENT", passwordHash: bcrypt.hashSync("client005", 10) // View only, comment, photo upload
+}, {
+    id: 6, name: "Client 1", role: "CLIENT", passwordHash: bcrypt.hashSync("client006", 10) // View only, comment, photo upload
+}, {
+    id: 7, name: "Vessel Manager", role: "CLIENT", passwordHash: bcrypt.hashSync("client007", 10) // View only, comment, photo upload
+}, {
+    id: 8, name: "Mark", role: "CLIENT", passwordHash: bcrypt.hashSync("client008", 10) // View only, comment, photo upload
+}];
+
+// Helper: given password, find user by comparing with all hashes
+function findUserByPassword(password) {
+    for (const u of users) {
+        if (bcrypt.compareSync(password, u.passwordHash)) {
+            return u;
+        }
+    }
+    return null;
+}
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,10 +67,9 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST", "DELETE"]
-  }
+    cors: {
+        origin: "*", methods: ["GET", "POST", "DELETE"]
+    }
 });
 
 app.use(cors());
@@ -26,24 +80,23 @@ const uploadsDir = path.join(__dirname, "uploads");
 app.use("/uploads", express.static(uploadsDir));
 
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadsDir);
-  },
-  filename: function (req, file, cb) {
-    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, unique + path.extname(file.originalname));
-  }
+    destination: function (req, file, cb) {
+        cb(null, uploadsDir);
+    }, filename: function (req, file, cb) {
+        const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
+        cb(null, unique + path.extname(file.originalname));
+    }
 });
-const upload = multer({ storage });
+const upload = multer({storage});
 
 const ENGINEER_KEY = "secret-engineer-key";
 
 function requireEngineer(req, res, next) {
-  const key = req.header("X-API-KEY");
-  if (key !== ENGINEER_KEY) {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-  next();
+    const key = req.header("X-API-KEY");
+    if (key !== ENGINEER_KEY) {
+        return res.status(403).json({error: "Forbidden"});
+    }
+    next();
 }
 
 // In-memory DB
@@ -52,614 +105,959 @@ let tasks = [];
 let logs = [];
 let endpoints = [];
 
-function addLog(vesselId, taskId, action, message) {
-  const entry = {
-    id: Date.now() + "-" + Math.random().toString(36).slice(2),
-    vesselId,
-    taskId,
-    action,
-    message,
-    timestamp: new Date().toISOString()
-  };
-  logs.push(entry);
-  broadcastSnapshot();
+function addLog(vesselId, actionText, req = null) {
+    const entry = {
+        id: Date.now() + "-" + Math.random().toString(36).slice(2),
+        vesselId,
+        action: actionText,
+        timestamp: new Date().toISOString(), // NEW FIELDS:
+        user: req?.user?.name || "Unknown",
+        userId: req?.user?.id || null,
+        role: req?.user?.role || "Unknown",
+        ip: req ? req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress : null,
+        userAgent: req ? req.headers["user-agent"] : null
+    };
+
+    logs.push(entry);
+    broadcastSnapshot();
 }
 
-const TASK_GROUPS = [
-  "Network Setup",
-  "Email & Communication",
-  "Software Installations",
-  "Server Setup",
-  "Verification & Handover"
-];
+const TASK_GROUPS = ["Network Setup", "Email & Communication", "Software Installations", "Server Setup", "Verification & Handover"];
 
-const TEMPLATE_TASKS = [
-  /* ------------------------------
-     Section: Checking Old Systems
-     ------------------------------ */
-  {
-    title: "Task 1: Verify server rack location and ventilation",
-    group: "Checking Old Systems",
-    deadline_seconds: 30 * 60,
-    comments: [],
-    attachments: [],
-    taskNumber: 1
-  },
-  /* ------------------------------
-     Section: Network Setup
-     ------------------------------ */
-  {
-    title: "Task 2: Identify managed switches and trace cables",
-    group: "Network Setup",
-    deadline_seconds: 45 * 60,
-    comments: [],
-    attachments: [],
-    taskNumber: 2
-  },
-  {
-    title: "Task 3: Checking all WANs (SL1, SL2, VSAT etc) - Active or Not",
-    group: "Network Setup",
-    deadline_seconds: 60 * 60,
-    comments: [],
-    attachments: [],
-    taskNumber: 3
-  },
-  {
-    title: "Task 4: Connect EVO router with current onboard setup",
-    group: "Network Setup",
-    deadline_seconds: 60 * 60,
-    comments: [],
-    attachments: [],
-    taskNumber: 4
-  },
-  {
-    title: "Task 5: Crew WiFi - UNIFI",
-    group: "Network Setup",
-    deadline_seconds: 60 * 60,
-    comments: [],
-    attachments: [],
-    taskNumber: 5
-  },
-  /* ------------------------------
-     Section: Mail Server Setup
-     ------------------------------ */
-  {
-    title: "Task 6: Setting up VM for Mail Server",
-    group: "Mail Server Setup",
-    deadline_seconds: 60 * 60,
-    comments: [],
-    attachments: [],
-    taskNumber: 6
-  },
-  {
-    title: "Task 7: Mail Server Setup",
-    group: "Mail Server Setup",
-    deadline_seconds: 60 * 60,
-    comments: [],
-    attachments: [],
-    taskNumber: 7
-  },
-  {
-    title: "Task 8: Verifying Test Email",
-    group: "Mail Server Setup",
-    deadline_seconds: 5 * 60,
-    comments: [],
-    attachments: [],
-    taskNumber: 8
-  },
-  /* ------------------------------
-     Section: Endpoints
-     ------------------------------ */
-  {
-    title: "Task 9: Go to Endpoint Tab to Start Work",
-    group: "Endpoints",
-    deadline_seconds: 3 * 60 * 60,
-    comments: [],
-    attachments: [],
-    taskNumber: 9
-  },
-  /* ------------------------------
-     Section: Server Setup
-     ------------------------------ */
-  {
-    title: "Task 10: Setting up VM for Software",
-    group: "Server Setup",
-    deadline_seconds: 60 * 60,
-    comments: [],
-    attachments: [],
-    taskNumber: 10
-  },
-  {
-    title: "Task 11: Installing softwares in VM",
-    group: "Server Setup",
-    deadline_seconds: 2 * 60 * 60,
-    comments: [],
-    attachments: [],
-    taskNumber: 11
-  },
-  /* ------------------------------
-     Section: Verification
-     ------------------------------ */
-  {
-    title: "Task 12: Verify all applications, TV, mails, SOC agent, WiFi from Captain",
-    group: "Verification",
-    deadline_seconds: 30 * 60,
-    comments: [],
-    attachments: [],
-    taskNumber: 12
-  },
-  {
-    title: "Task 13: Sign Off – Get UAT & SR Signed from Master",
-    group: "Verification",
-    deadline_seconds: 15 * 60,
-    comments: [],
-    attachments: [],
-    taskNumber: 13
-  }
-];
+const TEMPLATE_TASKS = [/* ------------------------------
+       Section: Checking Old Systems
+       ------------------------------ */
+    {
+        title: "Task 1: Verify server rack location and ventilation",
+        group: "Checking Old Systems",
+        deadline_seconds: 30 * 60,
+        comments: [],
+        attachments: [],
+        taskNumber: 1,
+        assignedTo: null //
+    }, /* ------------------------------
+       Section: Network Setup
+       ------------------------------ */
+    {
+        title: "Task 2: Identify managed switches and trace cables",
+        group: "Network Setup",
+        deadline_seconds: 45 * 60,
+        comments: [],
+        attachments: [],
+        taskNumber: 2,
+        assignedTo: null //
+    }, {
+        title: "Task 3: Checking all WANs (SL1, SL2, VSAT etc) - Active or Not",
+        group: "Network Setup",
+        deadline_seconds: 60 * 60,
+        comments: [],
+        attachments: [],
+        taskNumber: 3,
+        assignedTo: null //
+    }, {
+        title: "Task 4: Connect EVO router with current onboard setup",
+        group: "Network Setup",
+        deadline_seconds: 60 * 60,
+        comments: [],
+        attachments: [],
+        taskNumber: 4,
+        assignedTo: null //
+    }, {
+        title: "Task 5: Crew WiFi - UNIFI",
+        group: "Network Setup",
+        deadline_seconds: 60 * 60,
+        comments: [],
+        attachments: [],
+        taskNumber: 5,
+        assignedTo: null //
+    }, /* ------------------------------
+       Section: Mail Server Setup
+       ------------------------------ */
+    {
+        title: "Task 6: Setting up VM for Mail Server",
+        group: "Mail Server Setup",
+        deadline_seconds: 60 * 60,
+        comments: [],
+        attachments: [],
+        taskNumber: 6,
+        assignedTo: null //
+    }, {
+        title: "Task 7: Mail Server Setup",
+        group: "Mail Server Setup",
+        deadline_seconds: 60 * 60,
+        comments: [],
+        attachments: [],
+        taskNumber: 7,
+        assignedTo: null //
+    }, {
+        title: "Task 8: Verifying Test Email",
+        group: "Mail Server Setup",
+        deadline_seconds: 5 * 60,
+        comments: [],
+        attachments: [],
+        taskNumber: 8,
+        assignedTo: null //
+    }, /* ------------------------------
+       Section: Endpoints
+       ------------------------------ */
+    {
+        title: "Task 9: Go to Endpoint Tab to Start Work",
+        group: "Endpoints",
+        deadline_seconds: 3 * 60 * 60,
+        comments: [],
+        attachments: [],
+        taskNumber: 9,
+        assignedTo: null //
+    }, /* ------------------------------
+       Section: Server Setup
+       ------------------------------ */
+    {
+        title: "Task 10: Setting up VM for Software",
+        group: "Server Setup",
+        deadline_seconds: 60 * 60,
+        comments: [],
+        attachments: [],
+        taskNumber: 10,
+        assignedTo: null //
+    }, {
+        title: "Task 11: Installing softwares in VM",
+        group: "Server Setup",
+        deadline_seconds: 2 * 60 * 60,
+        comments: [],
+        attachments: [],
+        taskNumber: 11,
+        assignedTo: null //
+    }, /* ------------------------------
+       Section: Verification
+       ------------------------------ */
+    {
+        title: "Task 12: Verify all applications, TV, mails, SOC agent, WiFi from Captain",
+        group: "Verification",
+        deadline_seconds: 30 * 60,
+        comments: [],
+        attachments: [],
+        taskNumber: 12,
+        assignedTo: null //
+    }, {
+        title: "Task 13: Sign Off – Get UAT & SR Signed from Master",
+        group: "Verification",
+        deadline_seconds: 15 * 60,
+        comments: [],
+        attachments: [],
+        taskNumber: 13,
+        assignedTo: null //
+    }];
 
 const TEMPLATE_ENDPOINT_FIELDS = {
-  tv: "pending",
-  adminAcc: "pending",
-  accDisabled: "pending",
-  windowsKey: "pending",
-  softwareList: "pending",
-  staticIP: "pending",
-  noSleep: "pending",
-  rdEnabled: "pending",
-  crowdstrike: "pending",
-  defender: "pending",
-  soc: "pending",
-  emailBackup: "pending",
-  navis: "pending",
-  emailSetup: "pending",
-  mack: "pending",
-  ns5: "pending",
-  olp: "pending",
-  compas: "pending",
-  ibis: "pending",
-  oss: "pending",
-  proxyOff: "pending",
-  rdpSoftwares: "pending",
-  oneOcean: "pending",
-  bvs: "pending"
+    tv: "pending",
+    adminAcc: "pending",
+    accDisabled: "pending",
+    windowsKey: "pending",
+    softwareList: "pending",
+    staticIP: "pending",
+    noSleep: "pending",
+    rdEnabled: "pending",
+    crowdstrike: "pending",
+    defender: "pending",
+    soc: "pending",
+    emailBackup: "pending",
+    navis: "pending",
+    emailSetup: "pending",
+    mack: "pending",
+    ns5: "pending",
+    olp: "pending",
+    compas: "pending",
+    ibis: "pending",
+    oss: "pending",
+    proxyOff: "pending",
+    rdpSoftwares: "pending",
+    oneOcean: "pending",
+    bvs: "pending"
 };
 
 function seedInitial() {
-  
+
 }
 
 function createVesselWithTemplate(name, imo) {
-  const id = Date.now() + "-" + Math.random().toString(36).slice(2);
-  const vessel = {
-    id,
-    name,
-    imo,
-    status: "not_started",
-    createdAt: new Date().toISOString(),
-    endpointTimerStart: null,
-    endpointTimerEnd: null,
-    endpointElapsedSeconds: 0,
-  };
-  vessels.push(vessel);
+    const id = Date.now() + "-" + Math.random().toString(36).slice(2);
+    const vessel = {
+        id,
+        name,
+        imo,
+        status: "not_started",
+        createdAt: new Date().toISOString(),
+        endpointTimerStart: null,
+        endpointTimerEnd: null,
+        endpointElapsedSeconds: 0,
+    };
+    vessels.push(vessel);
 
-  TEMPLATE_TASKS.forEach((tpl, idx) => {
-    const tid = Date.now() + idx + Math.random();
-    tasks.push({
-      id: tid,
-      vesselId: id,
-      title: tpl.title,
-      group: tpl.group,
-      status: "pending",
-      elapsed_seconds: 0,
-      deadline_seconds: tpl.deadline_seconds,
-      comments: [],
-      attachments: [],
-      taskNumber: tpl.taskNumber
+    TEMPLATE_TASKS.forEach((tpl, idx) => {
+        const tid = Date.now() + idx + Math.random();
+        tasks.push({
+            id: tid,
+            vesselId: id,
+            title: tpl.title,
+            group: tpl.group,
+            status: "pending",
+            elapsed_seconds: 0,
+            deadline_seconds: tpl.deadline_seconds,
+            comments: [],
+            attachments: [],
+            taskNumber: tpl.taskNumber
+        });
     });
-  });
 
-  const ENDPOINT_NAMES = [
-    "Bridge",
-    "Master",
-    "Shoff",
-    "Shoff 2",
-    "ECR",
-    "ECR 2",
-    "Cheng",
-    "CDR",
-    "CDR 2",
-    "Loader",
-    "Chart"
-  ];
+    const ENDPOINT_NAMES = ["Bridge", "Master", "Shoff", "Shoff 2", "ECR", "ECR 2", "Cheng", "CDR", "CDR 2", "Loader", "Chart"];
 
-  ENDPOINT_NAMES.forEach((label) => {
-    endpoints.push({
-      id: Date.now() + "-ep-" + Math.random().toString(36).slice(2),
-      vesselId: vessel.id,
-      label,
-      fields: { ...TEMPLATE_ENDPOINT_FIELDS }
+    ENDPOINT_NAMES.forEach((label) => {
+        endpoints.push({
+            id: Date.now() + "-ep-" + Math.random().toString(36).slice(2),
+            vesselId: vessel.id,
+            label,
+            fields: {...TEMPLATE_ENDPOINT_FIELDS},
+            status: "not_started",        // not_started | in_progress | paused | done
+            elapsedSeconds: 0,
+            timerRunning: false,
+            assignedTo: null,
+        });
     });
-  });
 
-  // Apply special endpoint rules
-  endpoints.filter(e => e.vesselId === vessel.id && e.label === "Bridge").forEach(e => {
-    e.fields.oneOcean = "pending";
-    e.fields.bvs = "pending";
-  });
-  endpoints.filter(e => e.vesselId === vessel.id && e.label === "Master").forEach(e => {
-    e.fields.bvs = "pending";
-  });
+    // Apply special endpoint rules
+    endpoints.filter(e => e.vesselId === vessel.id && e.label === "Bridge").forEach(e => {
+        e.fields.oneOcean = "pending";
+        e.fields.bvs = "pending";
+    });
+    endpoints.filter(e => e.vesselId === vessel.id && e.label === "Master").forEach(e => {
+        e.fields.bvs = "pending";
+    });
 
-  addLog(id, null, "VESSEL_CREATED", `Vessel "${name}" created with template tasks.`);
+    addLog(id, `VESSEL_CREATED Vessel "${name}" created with template tasks.`, req);
 }
 
 seedInitial();
 
 // Timer: increment elapsed_seconds on in_progress tasks
 let lastTick = Date.now();
+// setInterval(() => {
+//     const now = Date.now();
+//     const diff = Math.floor((now - lastTick) / 1000);
+//     if (diff <= 0) return;
+//     lastTick = now;
+//     let changed = false;
+//     tasks.forEach((t) => {
+//         if (t.status === "in_progress") {
+//             t.elapsed_seconds = (t.elapsed_seconds || 0) + diff;
+//             changed = true;
+//         }
+//     });
+//     vessels.forEach(v => {
+//         if (v.endpointTimerStart && !v.endpointTimerEnd) {
+//             v.endpointElapsedSeconds = Math.floor((Date.now() - v.endpointTimerStart) / 1000);
+//             changed = true;
+//         }
+//     });
+//     if (changed) broadcastSnapshot();
+// }, 1000);
+
 setInterval(() => {
-  const now = Date.now();
-  const diff = Math.floor((now - lastTick) / 1000);
-  if (diff <= 0) return;
-  lastTick = now;
-  let changed = false;
-  tasks.forEach((t) => {
-    if (t.status === "in_progress") {
-      t.elapsed_seconds = (t.elapsed_seconds || 0) + diff;
-      changed = true;
-    }
-  });
-  vessels.forEach(v => {
-    if (v.endpointTimerStart && !v.endpointTimerEnd) {
-      v.endpointElapsedSeconds = Math.floor((Date.now() - v.endpointTimerStart) / 1000);
-      changed = true;
-    }
-  });
-  if (changed) broadcastSnapshot();
+    const now = Date.now();
+    const diff = Math.floor((now - lastTick) / 1000);
+    if (diff <= 0) return;
+    lastTick = now;
+    let changed = false;
+
+    // tasks
+    tasks.forEach((t) => {
+        if (t.status === "in_progress") {
+            t.elapsed_seconds = (t.elapsed_seconds || 0) + diff;
+            changed = true;
+        }
+    });
+
+    // per endpoint timers
+    endpoints.forEach((ep) => {
+        if (ep.timerRunning) {
+            ep.elapsedSeconds = (ep.elapsedSeconds || 0) + diff;
+            changed = true;
+        }
+    });
+
+    // old vessel level endpoint timer (keep if you still like the global view)
+    vessels.forEach((v) => {
+        if (v.endpointTimerStart && !v.endpointTimerEnd) {
+            v.endpointElapsedSeconds = Math.floor((Date.now() - v.endpointTimerStart) / 1000);
+            changed = true;
+        }
+    });
+
+    if (changed) broadcastSnapshot();
 }, 1000);
 
 function snapshot() {
-  return {
-    vessels,
-    tasks,
-    logs,
-    endpoints
-  };
+    return {
+        vessels, tasks, logs, endpoints, users
+    };
 }
 
 function broadcastSnapshot() {
-  io.emit("snapshot", snapshot());
+    io.emit("snapshot", snapshot());
 }
 
 // Socket connections
 io.on("connection", (socket) => {
-  socket.emit("snapshot", snapshot());
+    socket.emit("snapshot", snapshot());
 });
 
 // REST API
 
-app.post("/api/vessels/:id/endpoint-timer/start", requireEngineer, (req, res) => {
-  const vessel = vessels.find(v => v.id === req.params.id);
-  if (!vessel) return res.status(404).json({ error: "Vessel not found" });
 
-  vessel.endpointTimerStart = Date.now();
-  vessel.endpointTimerEnd = null;
-  vessel.endpointElapsedSeconds = 0;
+app.post("/api/auth/login", (req, res) => {
+    const {password} = req.body || {};
+    if (!password) {
+        return res.status(400).json({error: "Password is required"});
+    }
 
-  addLog(vessel.id, null, "ENDPOINT_TIMER_STARTED", "Endpoint checklist timer started");
-  broadcastSnapshot();
-  res.json({ ok: true });
+    const user = findUserByPassword(password);
+    if (!user) {
+        return res.status(401).json({error: "Invalid password"});
+    }
+
+    const payload = {
+        id: user.id, name: user.name, role: user.role
+    };
+
+    const token = jwt.sign(payload, JWT_SECRET, {expiresIn: "12h"});
+
+    return res.json({
+        token, user: payload
+    });
 });
 
-app.post("/api/vessels/:id/endpoint-timer/stop", requireEngineer, (req, res) => {
-  const vessel = vessels.find(v => v.id === req.params.id);
-  if (!vessel) return res.status(404).json({ error: "Vessel not found" });
+function requireAuth(req, res, next) {
+    const authHeader = req.headers["authorization"] || "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
 
-  vessel.endpointTimerEnd = Date.now();
-  vessel.endpointElapsedSeconds = Math.floor((vessel.endpointTimerEnd - vessel.endpointTimerStart) / 1000);
+    if (!token) {
+        return res.status(401).json({error: "Missing Authorization token"});
+    }
 
-  addLog(vessel.id, null, "ENDPOINT_TIMER_STOPPED", "Endpoint checklist timer stopped");
-  broadcastSnapshot();
-  res.json({ ok: true, elapsed: vessel.endpointElapsedSeconds });
+    try {
+        const payload = jwt.verify(token, JWT_SECRET);
+        req.user = payload; // { id, name, role }
+        next();
+    } catch (err) {
+        return res.status(401).json({error: "Invalid or expired token"});
+    }
+}
+
+// roles: "ADMIN", "ONBOARD_ENG", "REMOTE_TEAM", "CLIENT"
+function requireRole(...allowedRoles) {
+    return (req, res, next) => {
+        if (!req.user) {
+            return res.status(401).json({error: "Not authenticated"});
+        }
+        if (!allowedRoles.includes(req.user.role)) {
+            return res.status(403).json({error: "Forbidden for this role"});
+        }
+        next();
+    };
+}
+
+console.log(endpoints)
+
+app.post(
+    "/api/endpoints/:id/assign",
+    requireAuth,
+    requireRole("ADMIN", "ONBOARD_ENG"),
+    (req, res) => {
+        const {id} = req.params;
+        const {userId} = req.body;
+        const endpoint = endpoints.find(ep => ep.id === id);
+        if (!endpoint) {
+            return res.status(404).json({message: "Endpoint not found"});
+        }
+        const user = users.find(u => u.id === Number(userId));
+        if (!user) {
+            return res.status(400).json({message: "User not found"});
+        }
+
+        endpoint.assignedTo = userId;
+
+        addLog(
+            endpoint.vesselId,
+            `Endpoint "${endpoint.label}" assigned to ${user.name} (${user.role})`,
+            req
+        );
+
+        broadcastSnapshot();
+
+        res.json({
+            message: "Endpoint assigned successfully",
+            endpoint,
+        });
+    }
+);
+
+
+app.post("/api/tasks/:id/assign", requireAuth, requireRole("ADMIN", "ONBOARD_ENG"), (req, res) => {
+    const taskId = Number(req.params.id);
+    const {userId} = req.body;
+    const task = findTask(taskId);
+
+    if (!task) {
+        return res.status(404).json({error: "Task not found"});
+    }
+
+    // Validate user exists
+    const user = users.find(u => u.id === userId);
+    if (!user) {
+        return res.status(404).json({error: "User not found"});
+    }
+
+    task.assignedTo = userId;
+    addLog(task.vesselId, `Task "${task.title}" assigned to ${user.name}`, req);
+    broadcastSnapshot();
+
+    res.json({success: true, task});
+});
+
+
+app.post("/api/vessels/:id/endpoint-timer/start", requireAuth, (req, res) => {
+    const vessel = vessels.find(v => v.id === req.params.id);
+    if (!vessel) return res.status(404).json({error: "Vessel not found"});
+    //
+    // if (
+    //     task.assignedTo !== req.user.id &&
+    //     req.user.role !== "ADMIN" &&
+    //     req.user.role !== "ONBOARD_ENG"
+    // ) {
+    //     return res.status(403).json({error: "Not allowed to start this task"});
+    // }
+
+    vessel.endpointTimerStart = Date.now();
+    vessel.endpointTimerEnd = null;
+    vessel.endpointElapsedSeconds = 0;
+
+    addLog(vessel.id, "ENDPOINT_TIMER_STARTED", req);
+    broadcastSnapshot();
+    res.json({ok: true});
+});
+
+app.post("/api/vessels/:id/endpoint-timer/stop", requireAuth, (req, res) => {
+    const vessel = vessels.find(v => v.id === req.params.id);
+    if (!vessel) return res.status(404).json({error: "Vessel not found"});
+
+    vessel.endpointTimerEnd = Date.now();
+    vessel.endpointElapsedSeconds = Math.floor((vessel.endpointTimerEnd - vessel.endpointTimerStart) / 1000);
+
+    addLog(vessel.id, "ENDPOINT_TIMER_STOPPED", req);
+    broadcastSnapshot();
+    res.json({ok: true, elapsed: vessel.endpointElapsedSeconds});
 });
 
 // Vessels
 app.get("/api/vessels", (req, res) => {
-  res.json({ vessels });
+    res.json({vessels});
 });
 
-app.post("/api/vessels", requireEngineer, (req, res) => {
-  const { name, imo } = req.body;
-  if (!name) return res.status(400).json({ error: "Name required" });
-  const vessel = {
-    id: Date.now() + "-" + Math.random().toString(36).slice(2),
-    name,
-    imo: imo || "",
-    status: "not_started",
-    createdAt: new Date().toISOString(),
-    endpointTimerStart: null,
-    endpointTimerEnd: null,
-    endpointElapsedSeconds: 0,
-  };
-  vessels.push(vessel);
-  TEMPLATE_TASKS.forEach((tpl, idx) => {
-    const tid = Date.now() + idx + Math.random();
-    tasks.push({
-      id: tid,
-      vesselId: vessel.id,
-      title: tpl.title,
-      group: tpl.group,
-      status: "pending",
-      elapsed_seconds: 0,
-      deadline_seconds: tpl.deadline_seconds,
-      comments: [],
-      attachments: [],
-      taskNumber: tpl.taskNumber
+app.post("/api/vessels", requireAuth, requireRole("ADMIN", "ONBOARD_ENG"), (req, res) => {
+    const {name, imo} = req.body;
+    if (!name) return res.status(400).json({error: "Name required"});
+    const vessel = {
+        id: Date.now() + "-" + Math.random().toString(36).slice(2),
+        name,
+        imo: imo || "",
+        status: "not_started",
+        createdAt: new Date().toISOString(),
+        endpointTimerStart: null,
+        endpointTimerEnd: null,
+        endpointElapsedSeconds: 0,
+    };
+    vessels.push(vessel);
+    TEMPLATE_TASKS.forEach((tpl, idx) => {
+        const tid = Date.now() + idx + Math.random();
+        tasks.push({
+            id: tid,
+            vesselId: vessel.id,
+            title: tpl.title,
+            group: tpl.group,
+            status: "pending",
+            elapsed_seconds: 0,
+            deadline_seconds: tpl.deadline_seconds,
+            comments: [],
+            attachments: [],
+            taskNumber: tpl.taskNumber
+        });
     });
-  });
 
-  const ENDPOINT_NAMES = [
-    "Bridge",
-    "Master",
-    "Shoff",
-    "Shoff 2",
-    "ECR",
-    "ECR 2",
-    "Cheng",
-    "CDR",
-    "CDR 2",
-    "Loader",
-    "Chart"
-  ];
+    const ENDPOINT_NAMES = ["Bridge", "Master", "Shoff", "Shoff 2", "ECR", "ECR 2", "Cheng", "CDR", "CDR 2", "Loader", "Chart"];
 
-  ENDPOINT_NAMES.forEach((label) => {
-    endpoints.push({
-      id: Date.now() + "-ep-" + Math.random().toString(36).slice(2),
-      vesselId: vessel.id,
-      label,
-      fields: { ...TEMPLATE_ENDPOINT_FIELDS }
+    ENDPOINT_NAMES.forEach((label) => {
+        endpoints.push({
+            id: Date.now() + "-ep-" + Math.random().toString(36).slice(2),
+            vesselId: vessel.id,
+            label,
+            fields: {...TEMPLATE_ENDPOINT_FIELDS},assignedTo: null,
+        });
     });
-  });
 
-  // Apply special endpoint rules
-  endpoints.filter(e => e.vesselId === vessel.id && e.label === "Bridge").forEach(e => {
-    e.fields.oneOcean = "pending";
-    e.fields.bvs = "pending";
-  });
-  endpoints.filter(e => e.vesselId === vessel.id && e.label === "Master").forEach(e => {
-    e.fields.bvs = "pending";
-  });
+    // Apply special endpoint rules
+    endpoints.filter(e => e.vesselId === vessel.id && e.label === "Bridge").forEach(e => {
+        e.fields.oneOcean = "pending";
+        e.fields.bvs = "pending";
+    });
+    endpoints.filter(e => e.vesselId === vessel.id && e.label === "Master").forEach(e => {
+        e.fields.bvs = "pending";
+    });
 
-  addLog(vessel.id, null, "VESSEL_CREATED", `Vessel "${name}" created.`);
-  broadcastSnapshot();
-  res.json(vessel);
+    addLog(vessel.id, `VESSEL_CREATED Vessel \"${name}\" created.`, req);
+    broadcastSnapshot();
+    res.json(vessel);
 });
 
 // Tasks per vessel
 app.get("/api/vessels/:id/tasks", (req, res) => {
-  const list = tasks.filter((t) => t.vesselId === req.params.id);
-  res.json({ tasks: list });
+    const list = tasks.filter((t) => t.vesselId === req.params.id);
+    res.json({tasks: list});
 });
 
 app.get("/api/vessels/:id/endpoints", (req, res) => {
-  const list = endpoints.filter(e => e.vesselId === req.params.id);
-  res.json({ endpoints: list });
+    const list = endpoints.filter(e => e.vesselId === req.params.id);
+    res.json({endpoints: list});
 });
 
-app.post("/api/vessels/:id/tasks", requireEngineer, (req, res) => {
-  const vesselId = req.params.id;
-  const { title, group } = req.body;
-  if (!title) return res.status(400).json({ error: "Title required" });
-  const task = {
-    id: Date.now() + Math.random(),
-    vesselId,
-    title,
-    group: group || "General",
-    status: "pending",
-    elapsed_seconds: 0,
-    deadline_seconds: 3600,
-    comments: [],
-    attachments: []
-  };
-  tasks.push(task);
-  addLog(vesselId, task.id, "TASK_CREATED", `Task "${title}" added.`);
-  broadcastSnapshot();
-  res.json(task);
+app.post("/api/vessels/:id/tasks", requireAuth, requireRole("ADMIN", "REMOTE_TEAM"), (req, res) => {
+    const vesselId = req.params.id;
+    const {title, group} = req.body;
+    if (!title) return res.status(400).json({error: "Title required"});
+    const task = {
+        id: Date.now() + Math.random(),
+        vesselId,
+        title,
+        group: group || "General",
+        status: "pending",
+        elapsed_seconds: 0,
+        deadline_seconds: 3600,
+        comments: [],
+        attachments: []
+    };
+    tasks.push(task);
+    addLog(vesselId, `TASK_CREATED Task "${title}" added.`);
+    broadcastSnapshot();
+    res.json(task);
 });
 
-app.post("/api/endpoints/:id/field", requireEngineer, (req, res) => {
-  const ep = endpoints.find(e => String(e.id) === String(req.params.id));
-  if (!ep) return res.status(404).json({ error: "Endpoint not found" });
+app.post("/api/endpoints/:id/field", requireAuth, (req, res) => {
+    const ep = endpoints.find(e => String(e.id) === String(req.params.id));
+    if (!ep) return res.status(404).json({error: "Endpoint not found"});
 
-  const { field, value } = req.body;
-  if (!field) return res.status(400).json({ error: "Field required" });
+    const {field, value} = req.body;
+    if (!field) return res.status(400).json({error: "Field required"});
 
-  ep.fields[field] = value || "pending";
+    ep.fields[field] = value || "pending";
 
-  addLog(ep.vesselId, null, "ENDPOINT_UPDATED", `Field "${field}" updated on ${ep.label}`);
-  broadcastSnapshot();
+    addLog(ep.vesselId, `ENDPOINT_UPDATED Field "${field}" updated on ${ep.label}`);
+    broadcastSnapshot();
 
-  res.json({ ok: true, endpoint: ep });
+    res.json({ok: true, endpoint: ep});
 });
 
 function findTask(id) {
-  return tasks.find((t) => String(t.id) === String(id));
+    return tasks.find((t) => String(t.id) === String(id));
 }
 
 function findCommentById(task, commentId) {
-  return task.comments.find(c => String(c.id) === String(commentId));
+    return task.comments.find(c => String(c.id) === String(commentId));
 }
 
-app.post("/api/tasks/:id/comment", (req, res) => {
-  const task = findTask(req.params.id);
-  if (!task) return res.status(404).json({ error: "Task not found" });
+// app.post("/api/tasks/:id/comment", (req, res) => {
+//   const task = findTask(req.params.id);
+//   if (!task) return res.status(404).json({ error: "Task not found" });
+//
+//   const { comment, role, parentId = null } = req.body;
+//   if (!comment || !comment.trim()) {
+//     return res.status(400).json({ error: "Comment required" });
+//   }
+//   if (!role) {
+//     return res.status(400).json({ error: "Role required (engineer/client)" });
+//   }
+//
+//   if (!Array.isArray(task.comments)) task.comments = [];
+//
+//   const entry = {
+//     id: Date.now().toString(),
+//     text: comment,
+//     role,
+//     parentId,
+//     timestamp: new Date().toISOString()
+//   };
+//
+//   task.comments.push(entry);
+//
+//   addLog(
+//     task.vesselId,
+//     task.id,
+//     "COMMENT_ADDED",
+//     `${role} added comment on "${task.title}".`
+//   );
+//
+//   broadcastSnapshot();
+//   res.json({ ok: true, comment: entry });
+// });
 
-  const { comment, role, parentId = null } = req.body;
-  if (!comment || !comment.trim()) {
-    return res.status(400).json({ error: "Comment required" });
-  }
-  if (!role) {
-    return res.status(400).json({ error: "Role required (engineer/client)" });
-  }
+app.post("/api/tasks/:id/comment", requireAuth, // all roles can comment
+    (req, res) => {
+        const taskId = Number(req.params.id);
+        const {comment, parentId} = req.body || {};
+        const task = findTask(taskId);
+        if (!task) {
+            return res.status(404).json({error: "Task not found"});
+        }
+        if (!comment) {
+            return res.status(400).json({error: "Comment text is required"});
+        }
 
-  if (!Array.isArray(task.comments)) task.comments = [];
+        const newComment = {
+            id: Date.now(),
+            text: comment,
+            role: req.user.role,
+            authorId: req.user.id,
+            authorName: req.user.name,
+            parentId: parentId || null,
+            timestamp: new Date().toISOString()
+        };
 
-  const entry = {
-    id: Date.now().toString(),
-    text: comment,
-    role,
-    parentId,
-    timestamp: new Date().toISOString()
-  };
+        task.comments = task.comments || [];
+        task.comments.push(newComment);
 
-  task.comments.push(entry);
+        addLog(task.vesselId, `${req.user.role} added a comment on task "${task.title}"`, req);
 
-  addLog(
-    task.vesselId,
-    task.id,
-    "COMMENT_ADDED",
-    `${role} added comment on "${task.title}".`
-  );
+        broadcastSnapshot();
+        res.json(newComment);
+    });
 
-  broadcastSnapshot();
-  res.json({ ok: true, comment: entry });
-});
-
-app.put("/api/comment/:id", (req, res) => {
-  const { comment } = req.body;
-  if (!comment || !comment.trim()) {
-    return res.status(400).json({ error: "New comment text required" });
-  }
-
-  let foundTask = null;
-  let foundComment = null;
-
-  for (const t of tasks) {
-    if (t.comments) {
-      const c = t.comments.find(x => String(x.id) === String(req.params.id));
-      if (c) {
-        foundTask = t;
-        foundComment = c;
-        break;
-      }
+app.put("/api/comment/:id", requireAuth, requireRole('ADMIN'), (req, res) => {
+    const {comment} = req.body;
+    if (!comment || !comment.trim()) {
+        return res.status(400).json({error: "New comment text required"});
     }
-  }
 
-  if (!foundComment) return res.status(404).json({ error: "Comment not found" });
+    let foundTask = null;
+    let foundComment = null;
 
-  foundComment.text = comment;
-  foundComment.timestamp = new Date().toISOString();
-
-  addLog(foundTask.vesselId, foundTask.id, "COMMENT_EDITED", `Comment updated on "${foundTask.title}"`);
-  broadcastSnapshot();
-  res.json({ ok: true });
-});
-
-app.delete("/api/comment/:id", (req, res) => {
-  const commentId = String(req.params.id);
-
-  tasks.forEach(t => {
-    if (Array.isArray(t.comments)) {
-      // remove root + replies
-      const removeThread = (id) => {
-        const children = t.comments.filter(c => String(c.parentId) === String(id));
-        t.comments = t.comments.filter(c => String(c.id) !== String(id));
-        children.forEach(child => removeThread(child.id));
-      };
-      removeThread(commentId);
+    for (const t of tasks) {
+        if (t.comments) {
+            const c = t.comments.find(x => String(x.id) === String(req.params.id));
+            if (c) {
+                foundTask = t;
+                foundComment = c;
+                break;
+            }
+        }
     }
-  });
 
-  broadcastSnapshot();
-  res.json({ ok: true });
+    if (!foundComment) return res.status(404).json({error: "Comment not found"});
+
+    foundComment.text = comment;
+    foundComment.timestamp = new Date().toISOString();
+
+    addLog(foundTask.vesselId, `COMMENT_EDITED Comment updated on "${foundTask.title}"`, req);
+    broadcastSnapshot();
+    res.json({ok: true});
 });
 
-app.delete("/api/tasks/:id", requireEngineer, (req, res) => {
-  const task = findTask(req.params.id);
-  if (!task) return res.status(404).json({ error: "Task not found" });
-  tasks = tasks.filter((t) => String(t.id) !== String(req.params.id));
-  addLog(task.vesselId, task.id, "TASK_DELETED", `Task "${task.title}" removed.`);
-  broadcastSnapshot();
-  res.json({ ok: true });
-});
+// Delete vessel (ADMIN only)
+app.delete(
+    "/api/vessels/:id",
+    requireAuth,
+    requireRole("ADMIN"),
+    (req, res) => {
+        const {id} = req.params;
 
-app.post("/api/tasks/reorder", requireEngineer, (req, res) => {
-  const { vesselId, order } = req.body;
-  if (!vesselId || !Array.isArray(order)) {
-    return res.status(400).json({ error: "vesselId and order[] required" });
-  }
-  const vesselTasks = tasks.filter((t) => t.vesselId === vesselId);
-  const idToTask = new Map(vesselTasks.map((t) => [String(t.id), t]));
-  const reordered = [];
-  order.forEach((id) => {
-    const task = idToTask.get(String(id));
-    if (task) reordered.push(task);
-  });
-  const others = tasks.filter((t) => t.vesselId !== vesselId);
-  tasks = others.concat(reordered);
-  addLog(vesselId, null, "TASKS_REORDERED", "Task order updated.");
-  broadcastSnapshot();
-  res.json({ ok: true });
-});
+        const vesselIndex = vessels.findIndex(v => v.id === id);
+        if (vesselIndex === -1) {
+            return res.status(404).json({error: "Vessel not found"});
+        }
 
-app.post("/api/tasks/:id/start", requireEngineer, (req, res) => {
-  const task = findTask(req.params.id);
-  if (!task) return res.status(404).json({ error: "Task not found" });
+        const vessel = vessels[vesselIndex];
 
-  // Only one active per vessel
-  tasks.forEach((t) => {
-    if (t.vesselId === task.vesselId && t.status === "in_progress") {
-      t.status = "pending";
+        // Remove vessel itself
+        vessels.splice(vesselIndex, 1);
+
+        // Cascade delete related tasks, endpoints, and logs
+        // (optional but usually what you want)
+        for (let i = tasks.length - 1; i >= 0; i--) {
+            if (tasks[i].vesselId === id) tasks.splice(i, 1);
+        }
+        for (let i = endpoints.length - 1; i >= 0; i--) {
+            if (endpoints[i].vesselId === id) endpoints.splice(i, 1);
+        }
+        for (let i = logs.length - 1; i >= 0; i--) {
+            if (logs[i].vesselId === id) logs.splice(i, 1);
+        }
+
+        // Log audit entry with IP etc (your addLog already uses req.user and req.ip)
+        addLog(id, `VESSEL_DELETED Vessel "${vessel.name}" deleted by ${req.user.name}`, req);
+
+        broadcastSnapshot();
+        return res.json({ok: true});
     }
-  });
+);
 
-  task.status = "in_progress";
-  const vessel = vessels.find((v) => v.id === task.vesselId);
-  if (vessel && vessel.status === "not_started") vessel.status = "in_progress";
+app.put(
+    "/api/vessels/:id",
+    requireAuth,
+    requireRole("ADMIN"),
+    (req, res) => {
+        const {id} = req.params;
+        const {name} = req.body;
 
-  addLog(task.vesselId, task.id, "TASK_STARTED", `Task "${task.title}" started.`);
-  broadcastSnapshot();
-  res.json(task);
+        if (!name || !name.trim()) {
+            return res.status(400).json({error: "Name is required"});
+        }
+
+        const vessel = vessels.find((v) => v.id === id);
+        if (!vessel) {
+            return res.status(404).json({error: "Vessel not found"});
+        }
+
+        const oldName = vessel.name;
+        vessel.name = name.trim();
+
+        addLog(
+            vessel.id,
+            `VESSEL_RENAMED "${oldName}" → "${vessel.name}"`,
+            req
+        );
+
+        broadcastSnapshot();
+        return res.json({vessel});
+    }
+);
+
+
+app.delete("/api/comment/:id", requireAuth, requireRole('ADMIN'), (req, res) => {
+    const commentId = String(req.params.id);
+
+    tasks.forEach(t => {
+        if (Array.isArray(t.comments)) {
+            // remove root + replies
+            const removeThread = (id) => {
+                const children = t.comments.filter(c => String(c.parentId) === String(id));
+                t.comments = t.comments.filter(c => String(c.id) !== String(id));
+                children.forEach(child => removeThread(child.id));
+            };
+            removeThread(commentId);
+        }
+    });
+
+    broadcastSnapshot();
+    res.json({ok: true});
 });
 
-app.post("/api/tasks/:id/done", requireEngineer, (req, res) => {
-  const task = findTask(req.params.id);
-  if (!task) return res.status(404).json({ error: "Task not found" });
-  task.status = "done";
-  addLog(task.vesselId, task.id, "TASK_DONE", `Task "${task.title}" completed.`);
+app.delete("/api/tasks/:id", requireAuth, requireRole('ADMIN'), (req, res) => {
+    const task = findTask(req.params.id);
+    if (!task) return res.status(404).json({error: "Task not found"});
+    tasks = tasks.filter((t) => String(t.id) !== String(req.params.id));
+    addLog(task.vesselId, `TASK_DELETED Task "${task.title}" removed.`, req);
+    broadcastSnapshot();
+    res.json({ok: true});
+});
 
-  const vesselTasks = tasks.filter((t) => t.vesselId === task.vesselId);
-  if (vesselTasks.every((t) => t.status === "done")) {
+app.post("/api/tasks/reorder", requireAuth, (req, res) => {
+    const {vesselId, order} = req.body;
+    if (!vesselId || !Array.isArray(order)) {
+        return res.status(400).json({error: "vesselId and order[] required"});
+    }
+    const vesselTasks = tasks.filter((t) => t.vesselId === vesselId);
+    const idToTask = new Map(vesselTasks.map((t) => [String(t.id), t]));
+    const reordered = [];
+    order.forEach((id) => {
+        const task = idToTask.get(String(id));
+        if (task) reordered.push(task);
+    });
+    const others = tasks.filter((t) => t.vesselId !== vesselId);
+    tasks = others.concat(reordered);
+    addLog(vesselId, "TASKS_REORDERED Task order updated.", req);
+    broadcastSnapshot();
+    res.json({ok: true});
+});
+
+app.post("/api/tasks/:id/start", requireAuth, requireRole("ADMIN", "ONBOARD_ENG", "REMOTE_TEAM"), (req, res) => {
+    const task = findTask(req.params.id);
+    if (!task) return res.status(404).json({error: "Task not found"});
+
+    // Only one active per vessel
+    // tasks.forEach((t) => {
+    //   if (t.vesselId === task.vesselId && t.status === "in_progress") {
+    //     t.status = "pending";
+    //   }
+    // });
+    const isAdminOrEngineer = req.user.role === "ADMIN" || req.user.role === "ONBOARD_ENG";
+
+    if (task.assignedTo !== req.user.id && !isAdminOrEngineer) {
+        return res.status(403).json({error: "You are not assigned to this task."});
+    }
+
+    if (task.status !== "pending" && task.status !== "paused") {
+        return res.status(400).json({error: "Task cannot be started from this state."});
+    }
+
+    task.status = "in_progress";
     const vessel = vessels.find((v) => v.id === task.vesselId);
-    if (vessel) vessel.status = "completed";
-  }
+    if (vessel && vessel.status === "not_started") vessel.status = "in_progress";
 
-  broadcastSnapshot();
-  res.json(task);
+    addLog(task.vesselId, `${req.user.name} ${task.status === "paused" ? "resumed" : "started"} "${task.title}"`, req);
+    broadcastSnapshot();
+    res.json(task);
 });
 
-app.post("/api/tasks/:id/upload", requireEngineer, upload.single("file"), (req, res) => {
-  const task = findTask(req.params.id);
-  if (!task) return res.status(404).json({ error: "Task not found" });
-  if (!task.attachments) task.attachments = [];
-  const url = `/uploads/${req.file.filename}`;
-  task.attachments.push({
-    url,
-    originalName: req.file.originalname,
-    uploadedAt: new Date().toISOString()
-  });
-  addLog(task.vesselId, task.id, "ATTACHMENT_ADDED", `Screenshot uploaded for "${task.title}".`);
-  broadcastSnapshot();
-  res.json({ ok: true, url });
+app.post("/api/tasks/:id/pause", requireAuth, (req, res) => {
+    const taskId = Number(req.params.id);
+    const task = findTask(taskId);
+    if (!task) return res.status(404).json({error: "Task not found"});
+
+    const isAdminOrEngineer = req.user.role === "ADMIN" || req.user.role === "ONBOARD_ENG";
+
+    if (task.assignedTo !== req.user.id && !isAdminOrEngineer) {
+        return res.status(403).json({error: "You are not assigned to this task."});
+    }
+
+    if (task.status !== "in_progress") {
+        return res
+            .status(400)
+            .json({error: "Only an in-progress task can be paused."});
+    }
+
+    task.status = "paused";
+
+    addLog(task.vesselId, `${req.user.name} paused "${task.title}"`, req);
+
+    broadcastSnapshot();
+    res.json({success: true, taskId: task.id});
 });
+
+
+app.post("/api/tasks/:id/done", requireAuth, requireRole("ADMIN", "ONBOARD_ENG", "REMOTE_TEAM"), (req, res) => {
+    const task = findTask(req.params.id);
+    if (!task) return res.status(404).json({error: "Task not found"});
+    if (task.status !== "in_progress" && task.status !== "paused") {
+        return res.status(400).json({error: "Only active or paused tasks can be marked done."});
+    }
+    task.status = "done";
+    addLog(task.vesselId, `TASK_DONE Task "${task.title}" completed.`, req);
+
+    const vesselTasks = tasks.filter((t) => t.vesselId === task.vesselId);
+    if (vesselTasks.every((t) => t.status === "done")) {
+        const vessel = vessels.find((v) => v.id === task.vesselId);
+        if (vessel) vessel.status = "completed";
+    }
+
+    broadcastSnapshot();
+    res.json(task);
+});
+
+app.post("/api/tasks/:id/upload", requireAuth, upload.single("file"), (req, res) => {
+    const task = findTask(req.params.id);
+    if (!task) return res.status(404).json({error: "Task not found"});
+    if (!task.attachments) task.attachments = [];
+    const url = `/uploads/${req.file.filename}`;
+    task.attachments.push({
+        url, originalName: req.file.originalname, uploadedAt: new Date().toISOString()
+    });
+    addLog(task.vesselId, `ATTACHMENT_ADDED Screenshot uploaded for "${task.title}".`, req);
+    broadcastSnapshot();
+    res.json({ok: true, url});
+});
+
+function canControlEndpoint(endpoint, user) {
+    if (!user) return false;
+
+    // Admin can always control
+    if (user.role === "ADMIN") return true;
+
+    // If endpoint is assigned, only that user can control
+    if (endpoint.assignedTo) {
+        return Number(endpoint.assignedTo) === user.id;
+    }
+
+    // If no assignee yet, only ADMIN can control. Non admin cannot.
+    return false;
+}
+
+
+// Start endpoint timer
+app.post("/api/endpoints/:id/start", requireAuth, (req, res) => {
+    const ep = endpoints.find((e) => String(e.id) === String(req.params.id));
+    if (!ep) return res.status(404).json({error: "Endpoint not found"});
+
+    if (!canControlEndpoint(ep, req.user)) {
+        return res.status(403).json({
+            message: "You are not allowed to control this endpoint timer",
+        });
+    }
+
+    if (ep.status === "done") {
+        return res.status(400).json({error: "Endpoint already completed"});
+    }
+
+    ep.status = "in_progress";
+    ep.timerRunning = true;
+
+    addLog(ep.vesselId, `ENDPOINT_STARTED Endpoint "${ep.label}" started`, req);
+    broadcastSnapshot();
+    res.json({ok: true, endpoint: ep});
+});
+
+// Pause endpoint timer
+app.post("/api/endpoints/:id/pause", requireAuth, (req, res) => {
+    const ep = endpoints.find((e) => String(e.id) === String(req.params.id));
+    if (!ep) return res.status(404).json({error: "Endpoint not found"});
+
+    if (ep.status !== "in_progress") {
+        return res.status(400).json({error: "Only in progress endpoint can be paused"});
+    }
+
+    ep.status = "paused";
+    ep.timerRunning = false;
+
+    addLog(ep.vesselId, `ENDPOINT_PAUSED Endpoint "${ep.label}" paused`, req);
+    broadcastSnapshot();
+    res.json({ok: true, endpoint: ep});
+});
+
+// Mark endpoint done
+app.post("/api/endpoints/:id/done", requireAuth, (req, res) => {
+    const ep = endpoints.find((e) => String(e.id) === String(req.params.id));
+    if (!ep) return res.status(404).json({error: "Endpoint not found"});
+
+    if (!canControlEndpoint(ep, req.user)) {
+        return res.status(403).json({
+            message: "You are not allowed to control this endpoint timer",
+        });
+    }
+
+    if (ep.status === "done") {
+        return res.status(400).json({error: "Endpoint already done"});
+    }
+
+    ep.status = "done";
+    ep.timerRunning = false;
+
+    addLog(ep.vesselId, `ENDPOINT_DONE Endpoint "${ep.label}" marked done`, req);
+    broadcastSnapshot();
+    res.json({ok: true, endpoint: ep});
+});
+
 
 app.get("/api/vessels/:id/logs", (req, res) => {
-  const vesselLogs = logs.filter((l) => l.vesselId === req.params.id);
-  res.json({ logs: vesselLogs });
+    const vesselLogs = logs.filter((l) => l.vesselId === req.params.id);
+    res.json({logs: vesselLogs});
 });
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
-  console.log("Server listening on http://localhost:" + PORT);
+    console.log("Server listening on http://localhost:" + PORT);
 });
