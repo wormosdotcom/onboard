@@ -151,7 +151,7 @@ export default function App() {
     };
 
     function toTitleCase(str) {
-        return str.toLowerCase().replace(/\b\w/g, function(char) {
+        return str.toLowerCase().replace(/\b\w/g, function (char) {
             return char.toUpperCase();
         });
     }
@@ -228,7 +228,7 @@ export default function App() {
 
     const handleEndpointFieldChange = async (endpointId, field, assignedTo) => {
         // if (!isEngineer) return;
-        if(!(auth.id === assignedTo.id)) return;
+        if (!(auth.id === assignedTo.id)) return;
         const ep = vesselEndpoints.find((e) => e.id === endpointId);
         const current = (ep && ep.fields && ep.fields[field]) || "pending";
         const next = cycleEndpointStatus(current);
@@ -374,29 +374,81 @@ export default function App() {
     };
 
     const handleStartTask = async (taskId, task) => {
-        if (isAssignedToTask(task) || !isAdminOrEngineer) {
-            await fetch(`https://api-onboard.ishipplus.cloud/api/tasks/${taskId}/start`, {
-                method: "POST", headers: {...(auth?.token ? {Authorization: `Bearer ${auth.token}`} : {})}
-            });
+        if (!auth) return;
+
+        // Same rule as backend
+        if (!isAssignedToTask(task) && !isAdminOrEngineer) {
+            alert("You are not allowed to start this task");
+            return;
         }
+
+        await fetch(`${BASE_URL}/api/tasks/${taskId}/start`, {
+            method: "POST",
+            headers: {
+                ...(auth?.token ? { Authorization: `Bearer ${auth.token}` } : {})
+            }
+        });
     };
 
     const handlePauseTask = async (taskId, task) => {
-        handleSaveComment(taskId)
-        if (isAssignedToTask(task) || !isAdminOrEngineer) {
-            await fetch(`https://api-onboard.ishipplus.cloud/api/tasks/${taskId}/pause`, {
-                method: "POST", headers: {...(auth?.token ? {Authorization: `Bearer ${auth.token}`} : {})}
-            });
+        if (!auth) return;
+
+        handleSaveComment(taskId);
+
+        if (!isAssignedToTask(task) && !isAdminOrEngineer) {
+            alert("You are not allowed to pause this task");
+            return;
         }
+
+        await fetch(`${BASE_URL}/api/tasks/${taskId}/pause`, {
+            method: "POST",
+            headers: {
+                ...(auth?.token ? { Authorization: `Bearer ${auth.token}` } : {})
+            }
+        });
     };
 
     const handleDoneTask = async (taskId, task) => {
-        if (isAssignedToTask(task) || !isAdminOrEngineer) {
-            await fetch(`https://api-onboard.ishipplus.cloud/api/tasks/${taskId}/done`, {
-                method: "POST", headers: {...(auth?.token ? {Authorization: `Bearer ${auth.token}`} : {})}
-            });
+        if (!auth) return;
+
+        if (!isAssignedToTask(task) && !isAdminOrEngineer) {
+            alert("You are not allowed to complete this task");
+            return;
         }
+
+        await fetch(`${BASE_URL}/api/tasks/${taskId}/done`, {
+            method: "POST",
+            headers: {
+                ...(auth?.token ? { Authorization: `Bearer ${auth.token}` } : {})
+            }
+        });
     };
+
+
+    // const handleStartTask = async (taskId, task) => {
+    //     if (isAssignedToTask(task) || !isAdminOrEngineer) {
+    //         await fetch(`https://api-onboard.ishipplus.cloud/api/tasks/${taskId}/start`, {
+    //             method: "POST", headers: {...(auth?.token ? {Authorization: `Bearer ${auth.token}`} : {})}
+    //         });
+    //     }
+    // };
+    //
+    // const handlePauseTask = async (taskId, task) => {
+    //     handleSaveComment(taskId)
+    //     if (isAssignedToTask(task) || !isAdminOrEngineer) {
+    //         await fetch(`https://api-onboard.ishipplus.cloud/api/tasks/${taskId}/pause`, {
+    //             method: "POST", headers: {...(auth?.token ? {Authorization: `Bearer ${auth.token}`} : {})}
+    //         });
+    //     }
+    // };
+    //
+    // const handleDoneTask = async (taskId, task) => {
+    //     if (isAssignedToTask(task) || !isAdminOrEngineer) {
+    //         await fetch(`https://api-onboard.ishipplus.cloud/api/tasks/${taskId}/done`, {
+    //             method: "POST", headers: {...(auth?.token ? {Authorization: `Bearer ${auth.token}`} : {})}
+    //         });
+    //     }
+    // };
 
     const handleDeleteTask = async (taskId) => {
         if (!isEngineer) return;
@@ -1111,7 +1163,7 @@ export default function App() {
                                                                                         >
                                                                                             <p className="comment-text tiny-text">
                                                                                                 <strong>
-                                                                                                    {isClient ? reply.role :reply.authorName}
+                                                                                                    {isClient ? reply.role : reply.authorName}
                                                                                                     :
                                                                                                 </strong>{" "}
                                                                                                 {reply.text}
@@ -1291,7 +1343,7 @@ export default function App() {
                   : "Unassigned"}
             </span>
                                                 )}
-                                            </td> : null }
+                                            </td> : null}
 
                                             <td className="endpoint-timer-cell">
                                                 <div className="endpoint-timer-info small">
