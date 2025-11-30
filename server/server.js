@@ -14,41 +14,47 @@ const JWT_SECRET = "27389d24611f3c82ecbcf407162a22daa95f56e1";// move to env in 
 // Example in-memory users list
 // password in plain text (for you to remember) is in comment; code uses only hashed version
 const users = [{
-    id: 1, name: "Main Admin", role: "ADMIN", // aag laga dege, can edit comment modify and delete
-    passwordHash: bcrypt.hashSync("admin123!", 10)
+    id: 1, name: "Sam", role: "Admin", // aag laga dege, can edit comment modify and delete
+    passwordHash: bcrypt.hashSync("45546", 10)
+},
+//     {
+//     id: 2, name: "Onboard Engineer 1", role: "Onboard Eng", passwordHash: bcrypt.hashSync("onboard001", 10)
+// },
+    {
+    id: 3, name: "Abhinav", role: "Remote Team", // Task start, end and add + comment and photo upload
+    passwordHash: bcrypt.hashSync("110203", 10)
 }, {
-    id: 2, name: "Onboard Engineer 1", role: "ONBOARD_ENG", passwordHash: bcrypt.hashSync("onboard001", 10)
+    id: 10, name: "Jasleen", role: "Remote Team", // Task start, end and add + comment and photo upload
+    passwordHash: bcrypt.hashSync("101010", 10)
 }, {
-    id: 3, name: "Abhinav", role: "REMOTE_TEAM", // Task start, end and add + comment and photo upload
-    passwordHash: bcrypt.hashSync("remote001", 10)
+    id: 11, name: "Nikita", role: "Remote Team", // Task start, end and add + comment and photo upload
+    passwordHash: bcrypt.hashSync("101110", 10)
 }, {
-    id: 10, name: "Jasline", role: "REMOTE_TEAM", // Task start, end and add + comment and photo upload
-    passwordHash: bcrypt.hashSync("remote010", 10)
+    id: 12, name: "Shashank", role: "Onboard Eng", // Task start, end and add + comment and photo upload
+    passwordHash: bcrypt.hashSync("121011", 10)
 }, {
-    id: 11, name: "Nikita", role: "REMOTE_TEAM", // Task start, end and add + comment and photo upload
-    passwordHash: bcrypt.hashSync("remote011", 10)
+    id: 13, name: "Anurag", role: "Remote Team", // Task start, end and add + comment and photo upload
+    passwordHash: bcrypt.hashSync("131333", 10)
 }, {
-    id: 12, name: "Shashank", role: "REMOTE_TEAM", // Task start, end and add + comment and photo upload
-    passwordHash: bcrypt.hashSync("remote012", 10)
+    id: 14, name: "Amanjot", role: "Onboard Eng", // Task start, end and add + comment and photo upload
+    passwordHash: bcrypt.hashSync("141414", 10)
 }, {
-    id: 13, name: "Anurag", role: "REMOTE_TEAM", // Task start, end and add + comment and photo upload
-    passwordHash: bcrypt.hashSync("remote013", 10)
+    id: 9, name: "Owner", role: "Client", passwordHash: bcrypt.hashSync("909090", 10) // View only, comment, photo upload
 }, {
-    id: 14, name: "Amanjot", role: "REMOTE_TEAM", // Task start, end and add + comment and photo upload
-    passwordHash: bcrypt.hashSync("remote014", 10)
+    id: 4, name: "Saqib", role: "Client", passwordHash: bcrypt.hashSync("404040", 10) // View only, comment, photo upload
 }, {
-    id: 9, name: "Owner", role: "CLIENT", passwordHash: bcrypt.hashSync("client009", 10) // View only, comment, photo upload
+    id: 5, name: "Pawan", role: "Client", passwordHash: bcrypt.hashSync("505050", 10) // View only, comment, photo upload
+},  {
+    id: 7, name: "Vessel Manager", role: "Client", passwordHash: bcrypt.hashSync("707070", 10) // View only, comment, photo upload
 }, {
-    id: 4, name: "Sakib", role: "CLIENT", passwordHash: bcrypt.hashSync("client004", 10) // View only, comment, photo upload
-}, {
-    id: 5, name: "Pawan", role: "CLIENT", passwordHash: bcrypt.hashSync("client005", 10) // View only, comment, photo upload
-}, {
-    id: 6, name: "Client 1", role: "CLIENT", passwordHash: bcrypt.hashSync("client006", 10) // View only, comment, photo upload
-}, {
-    id: 7, name: "Vessel Manager", role: "CLIENT", passwordHash: bcrypt.hashSync("client007", 10) // View only, comment, photo upload
-}, {
-    id: 8, name: "Mark", role: "CLIENT", passwordHash: bcrypt.hashSync("client008", 10) // View only, comment, photo upload
-}];
+    id: 8, name: "Mark", role: "Client", passwordHash: bcrypt.hashSync("808080", 10) // View only, comment, photo upload
+},{
+        id: 15, name: "Dewansh Gangil", role: "Admin", // aag laga dege, can edit comment modify and delete
+        passwordHash: bcrypt.hashSync("730313", 10)
+    },{
+        id: 16, name: "Kriti", role: "Admin", // aag laga dege, can edit comment modify and delete
+        passwordHash: bcrypt.hashSync("365632", 10)
+    },];
 
 // Helper: given password, find user by comparing with all hashes
 function findUserByPassword(password) {
@@ -452,7 +458,7 @@ function requireAuth(req, res, next) {
     }
 }
 
-// roles: "ADMIN", "ONBOARD_ENG", "REMOTE_TEAM", "CLIENT"
+// roles: "Admin", "Onboard Eng", "Remote Team", "Client"
 function requireRole(...allowedRoles) {
     return (req, res, next) => {
         if (!req.user) {
@@ -470,7 +476,7 @@ console.log(endpoints)
 app.post(
     "/api/endpoints/:id/assign",
     requireAuth,
-    requireRole("ADMIN", "ONBOARD_ENG"),
+    requireRole("Admin", "Onboard Eng"),
     (req, res) => {
         const {id} = req.params;
         const {userId} = req.body;
@@ -501,7 +507,7 @@ app.post(
 );
 
 
-app.post("/api/tasks/:id/assign", requireAuth, requireRole("ADMIN", "ONBOARD_ENG"), (req, res) => {
+app.post("/api/tasks/:id/assign", requireAuth, requireRole("Admin", "Onboard Eng"), (req, res) => {
     const taskId = Number(req.params.id);
     const {userId} = req.body;
     const task = findTask(taskId);
@@ -530,8 +536,8 @@ app.post("/api/vessels/:id/endpoint-timer/start", requireAuth, (req, res) => {
     //
     // if (
     //     task.assignedTo !== req.user.id &&
-    //     req.user.role !== "ADMIN" &&
-    //     req.user.role !== "ONBOARD_ENG"
+    //     req.user.role !== "Admin" &&
+    //     req.user.role !== "Onboard Eng"
     // ) {
     //     return res.status(403).json({error: "Not allowed to start this task"});
     // }
@@ -562,7 +568,7 @@ app.get("/api/vessels", (req, res) => {
     res.json({vessels});
 });
 
-app.post("/api/vessels", requireAuth, requireRole("ADMIN", "ONBOARD_ENG"), (req, res) => {
+app.post("/api/vessels", requireAuth, requireRole("Admin", "Onboard Eng"), (req, res) => {
     const {name, imo} = req.body;
     if (!name) return res.status(400).json({error: "Name required"});
     const vessel = {
@@ -599,7 +605,7 @@ app.post("/api/vessels", requireAuth, requireRole("ADMIN", "ONBOARD_ENG"), (req,
             id: Date.now() + "-ep-" + Math.random().toString(36).slice(2),
             vesselId: vessel.id,
             label,
-            fields: {...TEMPLATE_ENDPOINT_FIELDS},assignedTo: null,
+            fields: {...TEMPLATE_ENDPOINT_FIELDS}, assignedTo: null,
         });
     });
 
@@ -628,7 +634,7 @@ app.get("/api/vessels/:id/endpoints", (req, res) => {
     res.json({endpoints: list});
 });
 
-app.post("/api/vessels/:id/tasks", requireAuth, requireRole("ADMIN", "REMOTE_TEAM"), (req, res) => {
+app.post("/api/vessels/:id/tasks", requireAuth, requireRole("Admin", "Remote Team"), (req, res) => {
     const vesselId = req.params.id;
     const {title, group} = req.body;
     if (!title) return res.status(400).json({error: "Title required"});
@@ -738,7 +744,7 @@ app.post("/api/tasks/:id/comment", requireAuth, // all roles can comment
         res.json(newComment);
     });
 
-app.put("/api/comment/:id", requireAuth, requireRole('ADMIN'), (req, res) => {
+app.put("/api/comment/:id", requireAuth, requireRole('Admin'), (req, res) => {
     const {comment} = req.body;
     if (!comment || !comment.trim()) {
         return res.status(400).json({error: "New comment text required"});
@@ -768,11 +774,11 @@ app.put("/api/comment/:id", requireAuth, requireRole('ADMIN'), (req, res) => {
     res.json({ok: true});
 });
 
-// Delete vessel (ADMIN only)
+// Delete vessel (Admin only)
 app.delete(
     "/api/vessels/:id",
     requireAuth,
-    requireRole("ADMIN"),
+    requireRole("Admin"),
     (req, res) => {
         const {id} = req.params;
 
@@ -809,7 +815,7 @@ app.delete(
 app.put(
     "/api/vessels/:id",
     requireAuth,
-    requireRole("ADMIN"),
+    requireRole("Admin"),
     (req, res) => {
         const {id} = req.params;
         const {name} = req.body;
@@ -838,7 +844,7 @@ app.put(
 );
 
 
-app.delete("/api/comment/:id", requireAuth, requireRole('ADMIN'), (req, res) => {
+app.delete("/api/comment/:id", requireAuth, requireRole('Admin'), (req, res) => {
     const commentId = String(req.params.id);
 
     tasks.forEach(t => {
@@ -857,7 +863,7 @@ app.delete("/api/comment/:id", requireAuth, requireRole('ADMIN'), (req, res) => 
     res.json({ok: true});
 });
 
-app.delete("/api/tasks/:id", requireAuth, requireRole('ADMIN'), (req, res) => {
+app.delete("/api/tasks/:id", requireAuth, requireRole('Admin'), (req, res) => {
     const task = findTask(req.params.id);
     if (!task) return res.status(404).json({error: "Task not found"});
     tasks = tasks.filter((t) => String(t.id) !== String(req.params.id));
@@ -885,7 +891,7 @@ app.post("/api/tasks/reorder", requireAuth, (req, res) => {
     res.json({ok: true});
 });
 
-app.post("/api/tasks/:id/start", requireAuth, requireRole("ADMIN", "ONBOARD_ENG", "REMOTE_TEAM"), (req, res) => {
+app.post("/api/tasks/:id/start", requireAuth, requireRole("Admin", "Onboard Eng", "Remote Team"), (req, res) => {
     const task = findTask(req.params.id);
     if (!task) return res.status(404).json({error: "Task not found"});
 
@@ -895,7 +901,7 @@ app.post("/api/tasks/:id/start", requireAuth, requireRole("ADMIN", "ONBOARD_ENG"
     //     t.status = "pending";
     //   }
     // });
-    const isAdminOrEngineer = req.user.role === "ADMIN" || req.user.role === "ONBOARD_ENG";
+    const isAdminOrEngineer = req.user.role === "Admin" || req.user.role === "Onboard Eng";
 
     if (task.assignedTo !== req.user.id && !isAdminOrEngineer) {
         return res.status(403).json({error: "You are not assigned to this task."});
@@ -919,7 +925,7 @@ app.post("/api/tasks/:id/pause", requireAuth, (req, res) => {
     const task = findTask(taskId);
     if (!task) return res.status(404).json({error: "Task not found"});
 
-    const isAdminOrEngineer = req.user.role === "ADMIN" || req.user.role === "ONBOARD_ENG";
+    const isAdminOrEngineer = req.user.role === "Admin" || req.user.role === "Onboard Eng";
 
     if (task.assignedTo !== req.user.id && !isAdminOrEngineer) {
         return res.status(403).json({error: "You are not assigned to this task."});
@@ -940,7 +946,7 @@ app.post("/api/tasks/:id/pause", requireAuth, (req, res) => {
 });
 
 
-app.post("/api/tasks/:id/done", requireAuth, requireRole("ADMIN", "ONBOARD_ENG", "REMOTE_TEAM"), (req, res) => {
+app.post("/api/tasks/:id/done", requireAuth, requireRole("Admin", "Onboard Eng", "Remote Team"), (req, res) => {
     const task = findTask(req.params.id);
     if (!task) return res.status(404).json({error: "Task not found"});
     if (task.status !== "in_progress" && task.status !== "paused") {
@@ -976,14 +982,14 @@ function canControlEndpoint(endpoint, user) {
     if (!user) return false;
 
     // Admin can always control
-    if (user.role === "ADMIN") return true;
+    if (user.role === "Admin") return true;
 
     // If endpoint is assigned, only that user can control
     if (endpoint.assignedTo) {
         return Number(endpoint.assignedTo) === user.id;
     }
 
-    // If no assignee yet, only ADMIN can control. Non admin cannot.
+    // If no assignee yet, only Admin can control. Non admin cannot.
     return false;
 }
 

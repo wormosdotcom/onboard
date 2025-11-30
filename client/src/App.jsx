@@ -81,7 +81,7 @@ export default function App() {
     });
 
     const [loginPassword, setLoginPassword] = useState("");
-    const [loginRole, setLoginRole] = useState("ADMIN"); // ADMIN | ONBOARD_ENG | REMOTE_TEAM | CLIENT
+    const [loginRole, setLoginRole] = useState("Admin"); // Admin | Onboard Eng | Remote Team | Client
     const [loginError, setLoginError] = useState("");
     const [uploadingTaskId, setUploadingTaskId] = useState(null);
     const [collapsedComments, setCollapsedComments] = useState({});
@@ -94,9 +94,9 @@ export default function App() {
         }));
     };
 
-    const isEngineer = auth?.role === "ADMIN" || auth?.role === "ONBOARD_ENG";
-    const isRemote = auth?.role === "REMOTE_TEAM";
-    const isClient = auth?.role === "CLIENT";
+    const isEngineer = auth?.role === "Admin" || auth?.role === "Onboard Eng";
+    const isRemote = auth?.role === "Remote Team";
+    const isClient = auth?.role === "Client";
 
     const handleLogin = async () => {
         setLoginError("");
@@ -150,6 +150,12 @@ export default function App() {
         }
     };
 
+    function toTitleCase(str) {
+        return str.toLowerCase().replace(/\b\w/g, function(char) {
+            return char.toUpperCase();
+        });
+    }
+
 
     // Passcode modal submit handler
     // const handlePasscodeSubmit = () => {
@@ -192,7 +198,7 @@ export default function App() {
 
         return auth?.id === task.assignedTo
     }
-    const isAdminOrEngineer = auth?.role === "ADMIN" || auth?.role === "ONBOARD_ENG";
+    const isAdminOrEngineer = auth?.role === "Admin" || auth?.role === "Onboard Eng";
 
     const selectedVessel = useMemo(() => vessels.find((v) => v.id === selectedVesselId) || null, [vessels, selectedVesselId]);
 
@@ -308,7 +314,7 @@ export default function App() {
     const canControlEndpoint = (endpoint) => {
         if (!auth) return false;
         // Admin full control
-        if (auth.role === "ADMIN") return true;
+        if (auth.role === "Admin") return true;
 
         // If no assignee, only admin can control
         if (!endpoint.assignedTo) return false;
@@ -661,7 +667,7 @@ export default function App() {
                 <div className="passcode-card">
                     <h2>Select Role & Login</h2>
                     <div className="login-role-tabs">
-                        {["ADMIN", "ONBOARD_ENG", "REMOTE_TEAM", "CLIENT"].map((r) => (
+                        {["Admin", "Onboard Eng", "Remote Team", "Client"].map((r) => (
                             <button
                                 key={r}
                                 type="button"
@@ -670,9 +676,9 @@ export default function App() {
                                 }
                                 onClick={() => setLoginRole(r)}
                             >
-                                {r === "ONBOARD_ENG"
+                                {r === "Onboard Eng"
                                     ? "ONBOARD ENG"
-                                    : r === "REMOTE_TEAM"
+                                    : r === "Remote Team"
                                         ? "REMOTE TEAM"
                                         : r}
                             </button>
@@ -1063,7 +1069,7 @@ export default function App() {
                                                                                 <p className="comment-text tiny-text">
 
                                                                                     <strong>
-                                                                                        {root.authorName}:
+                                                                                        {isClient ? root.role : root.authorName}:
                                                                                     </strong>{" "}
                                                                                     {root.text}
                                                                                 </p>
@@ -1098,7 +1104,7 @@ export default function App() {
                                                                                         >
                                                                                             <p className="comment-text tiny-text">
                                                                                                 <strong>
-                                                                                                    {reply.authorName}
+                                                                                                    {isClient ? reply.role :reply.authorName}
                                                                                                     :
                                                                                                 </strong>{" "}
                                                                                                 {reply.text}
@@ -1229,7 +1235,7 @@ export default function App() {
                                     <thead>
                                     <tr>
                                         <th>Endpoint</th>
-                                        <th>Assignee</th>
+                                        {isClient ? null : <th>Assignee</th>}
                                         {Object.keys(ENDPOINT_FIELD_LABELS).map(fieldKey => (
                                             <th key={fieldKey}>{ENDPOINT_FIELD_LABELS[fieldKey]}</th>
                                         ))}
@@ -1246,7 +1252,6 @@ export default function App() {
                                         const assignedUser = snapshot.users.find(function (e) {
                                             return e.id === Number(ep.assignedTo)
                                         })
-                                        console.log(assignedUser)
                                         const fieldKeys = Object.keys(ep.fields || {});
                                         const epStatus = ep.status || "not_started";
 
@@ -1254,9 +1259,9 @@ export default function App() {
 
                                         return (<tr key={ep.id}>
                                             <td className="endpoint-label">{ep.label}</td>
-                                            <td>
-                                                {/* Only ADMIN or ONBOARD_ENG can change the assignee */}
-                                                {(auth?.role === "ADMIN" || auth?.role === "ONBOARD_ENG") ? (
+                                            {!isClient ? <td>
+                                                {/* Only Admin or Onboard Eng can change the assignee */}
+                                                {(auth?.role === "Admin" || auth?.role === "Onboard Eng") ? (
                                                     <select
                                                         className="assign-select"
                                                         value={ep.assignedTo || ""}
@@ -1278,7 +1283,7 @@ export default function App() {
                   : "Unassigned"}
             </span>
                                                 )}
-                                            </td>
+                                            </td> : null }
 
                                             <td className="endpoint-timer-cell">
                                                 <div className="endpoint-timer-info small">
