@@ -677,9 +677,9 @@ export default function App() {
                                 onClick={() => setLoginRole(r)}
                             >
                                 {r === "Onboard Eng"
-                                    ? "ONBOARD ENG"
+                                    ? "Onboard Eng"
                                     : r === "Remote Team"
-                                        ? "REMOTE TEAM"
+                                        ? "Remote Team"
                                         : r}
                             </button>
                         ))}
