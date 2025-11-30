@@ -786,7 +786,7 @@ export default function App() {
                                 )}
                             </div>
                             <div className="vessel-meta">
-                                <span>{v.imo || "No IMO"}</span>
+                                <span>IMO: {v.imo || "No IMO"}</span>
                                 <span>{pct}%</span>
                             </div>
                             <div className="vessel-progress">
