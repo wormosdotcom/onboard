@@ -1153,6 +1153,7 @@ export default function App() {
                                                                             </select>
                                                                         </div>
                                                                     </div>)}
+                                                                {!isClient && <strong>{task.assignedTo || "Unassigned"}</strong>}
 
                                                             </div>
                                                         </div>
