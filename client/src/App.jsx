@@ -5,10 +5,10 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import "./App.css";
 
-const BASE_URL = "https://api-onboard.ishipplus.cloud";
+const BASE_URL = import.meta.env.VITE_API_URL || "";
 
 
-const socket = io(BASE_URL, {autoConnect: true});
+const socket = io(BASE_URL || window.location.origin, {autoConnect: true});
 
 const formatTime = (sec = 0) => {
     const h = Math.floor(sec / 3600);
@@ -102,7 +102,7 @@ export default function App() {
         setLoginError("");
         if (!loginPassword) return;
         try {
-            const res = await fetch("https://api-onboard.ishipplus.cloud/api/auth/login", {
+            const res = await fetch(`${BASE_URL}/api/auth/login`, {
                 method: "POST", headers: {
                     "Content-Type": "application/json"
                 }, body: JSON.stringify({password: loginPassword})
@@ -232,7 +232,7 @@ export default function App() {
         const ep = vesselEndpoints.find((e) => e.id === endpointId);
         const current = (ep && ep.fields && ep.fields[field]) || "pending";
         const next = cycleEndpointStatus(current);
-        await fetch(`https://api-onboard.ishipplus.cloud/api/endpoints/${endpointId}/field`, {
+        await fetch(`${BASE_URL}/api/endpoints/${endpointId}/field`, {
             method: "POST", headers: {
                 "Content-Type": "application/json", ...(auth?.token ? {Authorization: `Bearer ${auth.token}`} : {})
             }, body: JSON.stringify({field, value: next})
@@ -241,7 +241,7 @@ export default function App() {
 
     const handleEndpointTimerAction = async (endpointId, action) => {
         if (isClient) return;
-        await fetch(`https://api-onboard.ishipplus.cloud/api/endpoints/${endpointId}/${action}`, {
+        await fetch(`${BASE_URL}/api/endpoints/${endpointId}/${action}`, {
             method: "POST", headers: {
                 "Content-Type": "application/json", ...(auth?.token ? {Authorization: `Bearer ${auth.token}`} : {})
             },
@@ -269,7 +269,7 @@ export default function App() {
         const name = window.prompt("Vessel name:");
         if (!name) return;
         const imo = window.prompt("IMO number (optional):") || "";
-        await fetch("https://api-onboard.ishipplus.cloud/api/vessels", {
+        await fetch(`${BASE_URL}/api/vessels`, {
             method: "POST", headers: {
                 "Content-Type": "application/json", ...(auth?.token ? {Authorization: `Bearer ${auth.token}`} : {})
             }, body: JSON.stringify({name, imo})
@@ -286,7 +286,7 @@ export default function App() {
             return;
         }
 
-        await fetch(`https://api-onboard.ishipplus.cloud/api/vessels/${vesselId}`, {
+        await fetch(`${BASE_URL}/api/vessels/${vesselId}`, {
             method: "DELETE",
             headers: {
                 ...(auth?.token ? {Authorization: `Bearer ${auth.token}`} : {})
@@ -356,7 +356,7 @@ export default function App() {
             const title = window.prompt("Task title:");
             if (!title) return;
             const group = window.prompt("Task group: Network Setup / Email & Communication / Software Installations / Server Setup / Verification & Handover / General") || "General";
-            await fetch(`https://api-onboard.ishipplus.cloud/api/vessels/${selectedVesselId}/tasks`, {
+            await fetch(`${BASE_URL}/api/vessels/${selectedVesselId}/tasks`, {
                 method: "POST", headers: {
                     "Content-Type": "application/json", ...(auth?.token ? {Authorization: `Bearer ${auth.token}`} : {})
                 }, body: JSON.stringify({title, group})
@@ -453,7 +453,7 @@ export default function App() {
     const handleDeleteTask = async (taskId) => {
         if (!isEngineer) return;
         if (!window.confirm("Remove this task?")) return;
-        await fetch(`https://api-onboard.ishipplus.cloud/api/tasks/${taskId}`, {
+        await fetch(`${BASE_URL}/api/tasks/${taskId}`, {
             method: "DELETE", headers: {...(auth?.token ? {Authorization: `Bearer ${auth.token}`} : {})}
         });
     };
@@ -462,7 +462,7 @@ export default function App() {
         const comment = window.prompt("Enter comment:");
         if (!comment) return;
 
-        await fetch(`https://api-onboard.ishipplus.cloud/api/tasks/${taskId}/comment`, {
+        await fetch(`${BASE_URL}/api/tasks/${taskId}/comment`, {
             method: "POST", headers: {
                 "Content-Type": "application/json", ...(auth?.token ? {Authorization: `Bearer ${auth.token}`} : {})
             }, // backend should now read role from JWT (req.user.role),
@@ -476,7 +476,7 @@ export default function App() {
         if (!isAdminOrEngineer) return;
         const newText = window.prompt("Edit comment:");
         if (!newText) return;
-        await fetch(`https://api-onboard.ishipplus.cloud/api/comment/${commentId}`, {
+        await fetch(`${BASE_URL}/api/comment/${commentId}`, {
             method: "PUT", headers: {
                 "Content-Type": "application/json", ...(auth?.token ? {Authorization: `Bearer ${auth.token}`} : {})
             }, body: JSON.stringify({comment: newText})
@@ -486,7 +486,7 @@ export default function App() {
     const handleDeleteComment = async (commentId) => {
         if (!isAdminOrEngineer) return;
         if (!window.confirm("Delete this comment & all replies?")) return;
-        await fetch(`https://api-onboard.ishipplus.cloud/api/comment/${commentId}`, {
+        await fetch(`${BASE_URL}/api/comment/${commentId}`, {
             method: "DELETE", headers: {
                 ...(auth?.token ? {Authorization: `Bearer ${auth.token}`} : {})
             }
@@ -499,7 +499,7 @@ export default function App() {
         setUploadingTaskId(taskId);
         const form = new FormData();
         form.append("file", file);
-        await fetch(`https://api-onboard.ishipplus.cloud/api/tasks/${taskId}/upload`, {
+        await fetch(`${BASE_URL}/api/tasks/${taskId}/upload`, {
             method: "POST", headers: {
                 ...(auth?.token ? {Authorization: `Bearer ${auth.token}`} : {})
             }, body: form
@@ -517,7 +517,7 @@ export default function App() {
 
         const order = newTasks.map((t) => t.id);
 
-        await fetch("https://api-onboard.ishipplus.cloud/api/tasks/reorder", {
+        await fetch(`${BASE_URL}/api/tasks/reorder`, {
             method: "POST", headers: {
                 "Content-Type": "application/json", ...(auth?.token ? {Authorization: `Bearer ${auth.token}`} : {})
             }, body: JSON.stringify({vesselId: selectedVesselId, order})

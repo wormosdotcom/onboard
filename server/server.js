@@ -1063,7 +1063,7 @@ app.get("/api/vessels/:id/logs", (req, res) => {
     res.json({logs: vesselLogs});
 });
 
-const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => {
-    console.log("Server listening on http://localhost:" + PORT);
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, "0.0.0.0", () => {
+    console.log("Server listening on http://0.0.0.0:" + PORT);
 });
