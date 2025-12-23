@@ -13,6 +13,8 @@ const initWhatsApp = () => {
         return;
     }
 
+    connectionStatus = 'initializing';
+    
     client = new Client({
         authStrategy: new LocalAuth({
             dataPath: './.wwebjs_auth'
@@ -25,11 +27,19 @@ const initWhatsApp = () => {
                 '--disable-dev-shm-usage',
                 '--disable-accelerated-2d-canvas',
                 '--no-first-run',
-                '--no-zygote',
                 '--disable-gpu',
-                '--single-process'
+                '--disable-software-rasterizer',
+                '--disable-extensions',
+                '--disable-background-networking',
+                '--disable-sync',
+                '--disable-translate',
+                '--metrics-recording-only',
+                '--mute-audio',
+                '--no-default-browser-check',
+                '--safebrowsing-disable-auto-update'
             ],
-            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/nix/store/qa9cnw4v5xkxyip6mb9kxqfq1z4x2dx1-chromium-138.0.7204.100/bin/chromium'
+            executablePath: '/nix/store/qa9cnw4v5xkxyip6mb9kxqfq1z4x2dx1-chromium-138.0.7204.100/bin/chromium',
+            timeout: 60000
         }
     });
 
@@ -71,6 +81,7 @@ const initWhatsApp = () => {
     client.initialize().catch(err => {
         console.error('Failed to initialize WhatsApp client:', err);
         connectionStatus = 'error';
+        client = null;
     });
 };
 
