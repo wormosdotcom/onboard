@@ -131,34 +131,43 @@ const sendMessage = async (message) => {
     }
 };
 
+const formatExpectedTime = (seconds) => {
+    if (!seconds) return '';
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    if (hours > 0) return `${hours}h ${mins}m`;
+    return `${mins}m`;
+};
+
 const sendNotification = async (actionType, details) => {
-    const timestamp = new Date().toLocaleString();
     let message = '';
 
     switch (actionType) {
         case 'TASK_STARTED':
-            message = `🟢 *Task Started*\n📋 ${details.taskTitle}\n🚢 Vessel: ${details.vesselName}\n👤 By: ${details.userName}\n⏰ ${timestamp}`;
+            const expectedTime = details.expectedTime ? `\n⏱️ Expected: ${formatExpectedTime(details.expectedTime)}` : '';
+            message = `🟢 *Task Started*\n📋 ${details.taskTitle}${expectedTime}`;
             break;
         case 'TASK_PAUSED':
-            message = `⏸️ *Task Paused*\n📋 ${details.taskTitle}\n🚢 Vessel: ${details.vesselName}\n👤 By: ${details.userName}\n⏰ ${timestamp}`;
+            const pauseComment = details.comment ? `\n💬 "${details.comment}"` : '';
+            message = `⏸️ *Task Paused*\n📋 ${details.taskTitle}${pauseComment}`;
             break;
         case 'TASK_DONE':
-            message = `✅ *Task Completed*\n📋 ${details.taskTitle}\n🚢 Vessel: ${details.vesselName}\n👤 By: ${details.userName}\n⏰ ${timestamp}`;
+            message = `✅ *Task Completed*\n📋 ${details.taskTitle}`;
             break;
         case 'COMMENT_ADDED':
-            message = `💬 *New Comment*\n📋 Task: ${details.taskTitle}\n🚢 Vessel: ${details.vesselName}\n👤 By: ${details.userName}\n📝 "${details.comment}"\n⏰ ${timestamp}`;
+            message = `💬 *Comment*\n📋 ${details.taskTitle}\n"${details.comment}"`;
             break;
         case 'VESSEL_CREATED':
-            message = `🚢 *New Vessel Created*\n📛 Name: ${details.vesselName}\n👤 By: ${details.userName}\n⏰ ${timestamp}`;
+            message = `🚢 *New Vessel*\n📛 ${details.vesselName}`;
             break;
         case 'ENDPOINT_STARTED':
-            message = `🟢 *Endpoint Started*\n💻 ${details.endpointLabel}\n🚢 Vessel: ${details.vesselName}\n👤 By: ${details.userName}\n⏰ ${timestamp}`;
+            message = `🟢 *Endpoint Started*\n💻 ${details.endpointLabel}`;
             break;
         case 'ENDPOINT_DONE':
-            message = `✅ *Endpoint Completed*\n💻 ${details.endpointLabel}\n🚢 Vessel: ${details.vesselName}\n👤 By: ${details.userName}\n⏰ ${timestamp}`;
+            message = `✅ *Endpoint Done*\n💻 ${details.endpointLabel}`;
             break;
         default:
-            message = `📢 *Action: ${actionType}*\n${JSON.stringify(details)}\n⏰ ${timestamp}`;
+            message = `📢 ${actionType}`;
     }
 
     return await sendMessage(message);

@@ -755,11 +755,8 @@ app.post("/api/tasks/:id/comment", requireAuth, // all roles can comment
 
         broadcastSnapshot();
         
-        const vessel = vessels.find((v) => v.id === task.vesselId);
         sendNotification('COMMENT_ADDED', {
             taskTitle: task.title,
-            vesselName: vessel?.name || 'Unknown',
-            userName: req.user.name,
             comment: comment.substring(0, 100)
         });
         
@@ -942,8 +939,7 @@ app.post("/api/tasks/:id/start", requireAuth, requireRole("Admin", "Onboard Eng"
     
     sendNotification('TASK_STARTED', {
         taskTitle: task.title,
-        vesselName: vessel?.name || 'Unknown',
-        userName: req.user.name
+        expectedTime: task.deadline_seconds
     });
     
     res.json(task);
@@ -972,11 +968,8 @@ app.post("/api/tasks/:id/pause", requireAuth, (req, res) => {
 
     broadcastSnapshot();
     
-    const vessel = vessels.find((v) => v.id === task.vesselId);
     sendNotification('TASK_PAUSED', {
-        taskTitle: task.title,
-        vesselName: vessel?.name || 'Unknown',
-        userName: req.user.name
+        taskTitle: task.title
     });
     
     res.json({success: true, taskId: task.id});
@@ -1001,9 +994,7 @@ app.post("/api/tasks/:id/done", requireAuth, requireRole("Admin", "Onboard Eng",
     broadcastSnapshot();
     
     sendNotification('TASK_DONE', {
-        taskTitle: task.title,
-        vesselName: vessel?.name || 'Unknown',
-        userName: req.user.name
+        taskTitle: task.title
     });
     
     res.json(task);
