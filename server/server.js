@@ -9,6 +9,15 @@ import {fileURLToPath} from "url";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 
+import {
+    initWhatsApp,
+    getStatus as getWhatsAppStatus,
+    getQrCode,
+    getGroups as getWhatsAppGroups,
+    setGroupChatId,
+    sendNotification
+} from "./whatsappService.js";
+
 const JWT_SECRET = "27389d24611f3c82ecbcf407162a22daa95f56e1";// move to env in prod
 
 // Example in-memory users list
@@ -745,6 +754,15 @@ app.post("/api/tasks/:id/comment", requireAuth, // all roles can comment
         addLog(task.vesselId, `${req.user.role} added a comment on task "${task.title}"`, req);
 
         broadcastSnapshot();
+        
+        const vessel = vessels.find((v) => v.id === task.vesselId);
+        sendNotification('COMMENT_ADDED', {
+            taskTitle: task.title,
+            vesselName: vessel?.name || 'Unknown',
+            userName: req.user.name,
+            comment: comment.substring(0, 100)
+        });
+        
         res.json(newComment);
     });
 
@@ -921,6 +939,13 @@ app.post("/api/tasks/:id/start", requireAuth, requireRole("Admin", "Onboard Eng"
 
     addLog(task.vesselId, `${req.user.name} ${task.status === "paused" ? "resumed" : "started"} "${task.title}"`, req);
     broadcastSnapshot();
+    
+    sendNotification('TASK_STARTED', {
+        taskTitle: task.title,
+        vesselName: vessel?.name || 'Unknown',
+        userName: req.user.name
+    });
+    
     res.json(task);
 });
 
@@ -946,6 +971,14 @@ app.post("/api/tasks/:id/pause", requireAuth, (req, res) => {
     addLog(task.vesselId, `${req.user.name} paused "${task.title}"`, req);
 
     broadcastSnapshot();
+    
+    const vessel = vessels.find((v) => v.id === task.vesselId);
+    sendNotification('TASK_PAUSED', {
+        taskTitle: task.title,
+        vesselName: vessel?.name || 'Unknown',
+        userName: req.user.name
+    });
+    
     res.json({success: true, taskId: task.id});
 });
 
@@ -960,12 +993,19 @@ app.post("/api/tasks/:id/done", requireAuth, requireRole("Admin", "Onboard Eng",
     addLog(task.vesselId, `Task Done Task "${task.title}" completed.`, req);
 
     const vesselTasks = tasks.filter((t) => t.vesselId === task.vesselId);
+    const vessel = vessels.find((v) => v.id === task.vesselId);
     if (vesselTasks.every((t) => t.status === "done")) {
-        const vessel = vessels.find((v) => v.id === task.vesselId);
         if (vessel) vessel.status = "completed";
     }
 
     broadcastSnapshot();
+    
+    sendNotification('TASK_DONE', {
+        taskTitle: task.title,
+        vesselName: vessel?.name || 'Unknown',
+        userName: req.user.name
+    });
+    
     res.json(task);
 });
 
@@ -1065,6 +1105,43 @@ app.post("/api/endpoints/:id/done", requireAuth, (req, res) => {
 app.get("/api/vessels/:id/logs", (req, res) => {
     const vesselLogs = logs.filter((l) => l.vesselId === req.params.id);
     res.json({logs: vesselLogs});
+});
+
+// WhatsApp API routes
+app.get("/api/whatsapp/status", requireAuth, requireRole("Admin"), (req, res) => {
+    res.json(getWhatsAppStatus());
+});
+
+app.get("/api/whatsapp/qr", requireAuth, requireRole("Admin"), (req, res) => {
+    const qr = getQrCode();
+    if (qr) {
+        res.json({ qrCode: qr });
+    } else {
+        res.json({ qrCode: null, message: "No QR code available" });
+    }
+});
+
+app.post("/api/whatsapp/init", requireAuth, requireRole("Admin"), (req, res) => {
+    initWhatsApp();
+    res.json({ message: "WhatsApp initialization started" });
+});
+
+app.get("/api/whatsapp/groups", requireAuth, requireRole("Admin"), async (req, res) => {
+    try {
+        const groups = await getWhatsAppGroups();
+        res.json({ groups });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to get groups" });
+    }
+});
+
+app.post("/api/whatsapp/set-group", requireAuth, requireRole("Admin"), (req, res) => {
+    const { groupId } = req.body;
+    if (!groupId) {
+        return res.status(400).json({ error: "groupId required" });
+    }
+    setGroupChatId(groupId);
+    res.json({ message: "Group set successfully", groupId });
 });
 
 // Catch-all route - serve index.html for client-side routing
