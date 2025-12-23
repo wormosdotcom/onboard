@@ -40,7 +40,33 @@ The frontend uses Vite's proxy to route API requests to the backend:
 - `/uploads/*` → localhost:3001
 - `/socket.io/*` → localhost:3001 (WebSocket)
 
+## WhatsApp Integration
+The system supports WhatsApp notifications via QR code authentication:
+
+### Setup (Admin only)
+1. Go to the "WhatsApp" tab in the admin interface
+2. Click "Initialize WhatsApp" to start the connection
+3. Scan the QR code with WhatsApp (use a secondary number)
+4. Once connected, click "Load Groups" and select the notification group
+
+### Notifications
+WhatsApp messages are sent when:
+- A task is started
+- A task is paused
+- A task is completed
+- A comment is added to a task
+
+### Technical Details
+- Uses whatsapp-web.js library with Puppeteer
+- Session data stored in `.wwebjs_auth/` directory
+- Admin-only API routes: `/api/whatsapp/*`
+- Service file: `server/whatsappService.js`
+
 ## Recent Changes
+- 2025-12-23: Added WhatsApp integration with QR code authentication
+  - Created WhatsApp service module with notification templates
+  - Added admin-only WhatsApp settings tab
+  - Integrated notifications into task actions
 - 2025-12-23: Configured for Replit environment
   - Updated Vite config with proxy and allowed hosts
   - Changed server port to 3001
