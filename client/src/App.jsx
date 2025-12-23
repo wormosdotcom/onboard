@@ -87,7 +87,13 @@ export default function App() {
     const [collapsedComments, setCollapsedComments] = useState({});
     const [previewImage, setPreviewImage] = useState(null);
     const [sidebarOpen, setSidebarOpen] = useState(true);
-    const [activeTab, setActiveTab] = useState("tasks"); // tasks | endpoints | activity
+    const [activeTab, setActiveTab] = useState("tasks"); // tasks | endpoints | activity | whatsapp
+    
+    const [whatsappStatus, setWhatsappStatus] = useState(null);
+    const [whatsappQr, setWhatsappQr] = useState(null);
+    const [whatsappGroups, setWhatsappGroups] = useState([]);
+    const [selectedGroupId, setSelectedGroupId] = useState("");
+    
     const toggleComments = (taskId) => {
         setCollapsedComments(prev => ({
             ...prev, [taskId]: !prev[taskId]
@@ -149,6 +155,90 @@ export default function App() {
             console.warn("Failed to clear session", e);
         }
     };
+
+    const fetchWhatsAppStatus = async () => {
+        if (!auth?.token) return;
+        try {
+            const res = await fetch(`${BASE_URL}/api/whatsapp/status`, {
+                headers: { Authorization: `Bearer ${auth.token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setWhatsappStatus(data);
+            }
+        } catch (err) {
+            console.error("Failed to fetch WhatsApp status:", err);
+        }
+    };
+
+    const fetchWhatsAppQr = async () => {
+        if (!auth?.token) return;
+        try {
+            const res = await fetch(`${BASE_URL}/api/whatsapp/qr`, {
+                headers: { Authorization: `Bearer ${auth.token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setWhatsappQr(data.qrCode);
+            }
+        } catch (err) {
+            console.error("Failed to fetch WhatsApp QR:", err);
+        }
+    };
+
+    const fetchWhatsAppGroups = async () => {
+        if (!auth?.token) return;
+        try {
+            const res = await fetch(`${BASE_URL}/api/whatsapp/groups`, {
+                headers: { Authorization: `Bearer ${auth.token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setWhatsappGroups(data.groups || []);
+            }
+        } catch (err) {
+            console.error("Failed to fetch WhatsApp groups:", err);
+        }
+    };
+
+    const initWhatsApp = async () => {
+        if (!auth?.token) return;
+        try {
+            await fetch(`${BASE_URL}/api/whatsapp/init`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${auth.token}` }
+            });
+            setTimeout(fetchWhatsAppStatus, 2000);
+            setTimeout(fetchWhatsAppQr, 3000);
+        } catch (err) {
+            console.error("Failed to init WhatsApp:", err);
+        }
+    };
+
+    const setWhatsAppGroup = async (groupId) => {
+        if (!auth?.token || !groupId) return;
+        try {
+            await fetch(`${BASE_URL}/api/whatsapp/set-group`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${auth.token}`
+                },
+                body: JSON.stringify({ groupId })
+            });
+            setSelectedGroupId(groupId);
+            alert("WhatsApp group set successfully!");
+        } catch (err) {
+            console.error("Failed to set WhatsApp group:", err);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === "whatsapp" && auth?.role === "Admin") {
+            fetchWhatsAppStatus();
+            fetchWhatsAppQr();
+        }
+    }, [activeTab, auth]);
 
     function toTitleCase(str) {
         return str.toLowerCase().replace(/\b\w/g, function (char) {
@@ -905,6 +995,14 @@ export default function App() {
                         >
                             Activity Log
                         </button>
+                        {auth?.role === "Admin" && (
+                            <button
+                                className={`tab-btn ${activeTab === "whatsapp" ? "active" : ""}`}
+                                onClick={() => setActiveTab("whatsapp")}
+                            >
+                                WhatsApp
+                            </button>
+                        )}
                     </div>
 
                     {activeTab === "tasks" && (<div className="single-column">
@@ -1419,6 +1517,124 @@ export default function App() {
                             </div>
                         </section>
                     </div>)}
+
+                    {activeTab === "whatsapp" && auth?.role === "Admin" && (
+                        <div className="single-column">
+                            <section className="whatsapp-section" style={{padding: "20px", maxWidth: "600px"}}>
+                                <h3>WhatsApp Notifications</h3>
+                                <p style={{color: "#666", marginBottom: "20px"}}>
+                                    Connect WhatsApp to receive task notifications in a group.
+                                </p>
+                                
+                                <div style={{marginBottom: "20px", padding: "15px", background: "#f5f5f5", borderRadius: "8px"}}>
+                                    <strong>Status:</strong>{" "}
+                                    <span style={{
+                                        color: whatsappStatus?.status === "connected" ? "#16a34a" : 
+                                               whatsappStatus?.status === "waiting_for_scan" ? "#ca8a04" : "#dc2626"
+                                    }}>
+                                        {whatsappStatus?.status || "Not initialized"}
+                                    </span>
+                                </div>
+
+                                {whatsappStatus?.status !== "connected" && (
+                                    <button 
+                                        onClick={initWhatsApp}
+                                        style={{
+                                            padding: "12px 24px",
+                                            background: "#25D366",
+                                            color: "white",
+                                            border: "none",
+                                            borderRadius: "8px",
+                                            cursor: "pointer",
+                                            fontSize: "16px",
+                                            marginBottom: "20px"
+                                        }}
+                                    >
+                                        Initialize WhatsApp
+                                    </button>
+                                )}
+
+                                {whatsappQr && whatsappStatus?.status === "waiting_for_scan" && (
+                                    <div style={{marginBottom: "20px", textAlign: "center"}}>
+                                        <p style={{marginBottom: "10px"}}>Scan this QR code with WhatsApp:</p>
+                                        <img 
+                                            src={whatsappQr} 
+                                            alt="WhatsApp QR Code" 
+                                            style={{maxWidth: "300px", border: "1px solid #ddd", borderRadius: "8px"}}
+                                        />
+                                        <button 
+                                            onClick={fetchWhatsAppQr}
+                                            style={{
+                                                display: "block",
+                                                margin: "10px auto",
+                                                padding: "8px 16px",
+                                                background: "#eee",
+                                                border: "none",
+                                                borderRadius: "4px",
+                                                cursor: "pointer"
+                                            }}
+                                        >
+                                            Refresh QR Code
+                                        </button>
+                                    </div>
+                                )}
+
+                                {whatsappStatus?.status === "connected" && (
+                                    <div style={{marginTop: "20px"}}>
+                                        <button 
+                                            onClick={fetchWhatsAppGroups}
+                                            style={{
+                                                padding: "10px 20px",
+                                                background: "#3b82f6",
+                                                color: "white",
+                                                border: "none",
+                                                borderRadius: "6px",
+                                                cursor: "pointer",
+                                                marginBottom: "15px"
+                                            }}
+                                        >
+                                            Load Groups
+                                        </button>
+
+                                        {whatsappGroups.length > 0 && (
+                                            <div>
+                                                <label style={{display: "block", marginBottom: "8px", fontWeight: "bold"}}>
+                                                    Select notification group:
+                                                </label>
+                                                <select 
+                                                    value={selectedGroupId}
+                                                    onChange={(e) => setWhatsAppGroup(e.target.value)}
+                                                    style={{
+                                                        width: "100%",
+                                                        padding: "10px",
+                                                        borderRadius: "6px",
+                                                        border: "1px solid #ddd",
+                                                        fontSize: "14px"
+                                                    }}
+                                                >
+                                                    <option value="">-- Select a group --</option>
+                                                    {whatsappGroups.map((g) => (
+                                                        <option key={g.id} value={g.id}>{g.name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
+
+                                        {whatsappStatus?.groupChatId && (
+                                            <p style={{marginTop: "15px", color: "#16a34a"}}>
+                                                Notifications will be sent to the selected group.
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+
+                                <div style={{marginTop: "30px", padding: "15px", background: "#fef3c7", borderRadius: "8px"}}>
+                                    <strong>Note:</strong> WhatsApp doesn't officially support bots. 
+                                    Use a secondary number to avoid any issues with your main account.
+                                </div>
+                            </section>
+                        </div>
+                    )}
                 </>) : (<p className="empty-state">
                     Select a vessel from the left or add one.
                 </p>)}
