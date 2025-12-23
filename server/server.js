@@ -85,6 +85,10 @@ app.use(express.json());
 const uploadsDir = path.join(__dirname, "uploads");
 app.use("/uploads", express.static(uploadsDir));
 
+// Serve static frontend build in production
+const clientDistPath = path.join(__dirname, "../client/dist");
+app.use(express.static(clientDistPath));
+
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
         cb(null, uploadsDir);
@@ -1061,6 +1065,11 @@ app.post("/api/endpoints/:id/done", requireAuth, (req, res) => {
 app.get("/api/vessels/:id/logs", (req, res) => {
     const vesselLogs = logs.filter((l) => l.vesselId === req.params.id);
     res.json({logs: vesselLogs});
+});
+
+// Catch-all route - serve index.html for client-side routing
+app.get("*", (req, res) => {
+    res.sendFile(path.join(clientDistPath, "index.html"));
 });
 
 const PORT = process.env.PORT || 3001;
