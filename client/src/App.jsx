@@ -1559,6 +1559,11 @@ export default function App() {
                                     }}>
                                         {whatsappStatus?.status || "Not initialized"}
                                     </span>
+                                    {whatsappStatus?.error && (
+                                        <div style={{marginTop: "10px", padding: "10px", background: "#fee2e2", borderRadius: "4px", color: "#991b1b", fontSize: "13px"}}>
+                                            <strong>Error:</strong> {whatsappStatus.error}
+                                        </div>
+                                    )}
                                 </div>
 
                                 {whatsappStatus?.status !== "connected" && (

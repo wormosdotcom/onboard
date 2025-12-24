@@ -1,12 +1,41 @@
 import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth } = pkg;
 import QRCode from 'qrcode';
+import { execSync } from 'child_process';
+import fs from 'fs';
 
 let client = null;
 let qrCodeData = null;
 let isReady = false;
 let connectionStatus = 'disconnected';
 let groupChatId = null;
+let lastError = null;
+
+const findChromiumPath = () => {
+    const possiblePaths = [
+        '/nix/store/qa9cnw4v5xkxyip6mb9kxqfq1z4x2dx1-chromium-138.0.7204.100/bin/chromium',
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/google-chrome',
+        '/usr/bin/google-chrome-stable'
+    ];
+    
+    for (const p of possiblePaths) {
+        if (fs.existsSync(p)) {
+            return p;
+        }
+    }
+    
+    try {
+        const result = execSync('which chromium || which chromium-browser || which google-chrome 2>/dev/null', { encoding: 'utf8' }).trim();
+        if (result && fs.existsSync(result)) {
+            return result;
+        }
+    } catch (e) {
+    }
+    
+    return null;
+};
 
 const initWhatsApp = () => {
     if (client) {
@@ -14,6 +43,17 @@ const initWhatsApp = () => {
     }
 
     connectionStatus = 'initializing';
+    lastError = null;
+    
+    const chromiumPath = findChromiumPath();
+    if (!chromiumPath) {
+        connectionStatus = 'error';
+        lastError = 'Chromium browser not found. WhatsApp requires Chromium to be installed.';
+        console.error(lastError);
+        return;
+    }
+    
+    console.log('Using Chromium at:', chromiumPath);
     
     client = new Client({
         authStrategy: new LocalAuth({
@@ -38,7 +78,7 @@ const initWhatsApp = () => {
                 '--no-default-browser-check',
                 '--safebrowsing-disable-auto-update'
             ],
-            executablePath: '/nix/store/qa9cnw4v5xkxyip6mb9kxqfq1z4x2dx1-chromium-138.0.7204.100/bin/chromium',
+            executablePath: chromiumPath,
             timeout: 60000
         }
     });
@@ -81,6 +121,7 @@ const initWhatsApp = () => {
     client.initialize().catch(err => {
         console.error('Failed to initialize WhatsApp client:', err);
         connectionStatus = 'error';
+        lastError = err.message || 'Failed to initialize WhatsApp client';
         client = null;
     });
 };
@@ -89,7 +130,8 @@ const getStatus = () => ({
     status: connectionStatus,
     isReady,
     hasQrCode: !!qrCodeData,
-    groupChatId
+    groupChatId,
+    error: lastError
 });
 
 const getQrCode = () => qrCodeData;

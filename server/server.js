@@ -1204,9 +1204,14 @@ app.post("/api/whatsapp/set-group", requireAuth, requireRole("Admin"), (req, res
     res.json({ message: "Group set successfully", groupId });
 });
 
-// Catch-all route - serve index.html for client-side routing
+// Catch-all route - serve index.html for client-side routing (production only)
 app.get("*", (req, res) => {
-    res.sendFile(path.join(clientDistPath, "index.html"));
+    const indexPath = path.join(clientDistPath, "index.html");
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.status(404).json({ error: "Not found - running in development mode" });
+    }
 });
 
 const PORT = process.env.PORT || 3001;
