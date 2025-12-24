@@ -4,6 +4,7 @@ import {Server} from "socket.io";
 import cors from "cors";
 import multer from "multer";
 import path from "path";
+import fs from "fs";
 import {fileURLToPath} from "url";
 
 import jwt from "jsonwebtoken";

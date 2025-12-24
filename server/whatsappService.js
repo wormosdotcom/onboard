@@ -13,11 +13,11 @@ let lastError = null;
 
 const findChromiumPath = () => {
     const possiblePaths = [
-        '/nix/store/qa9cnw4v5xkxyip6mb9kxqfq1z4x2dx1-chromium-138.0.7204.100/bin/chromium',
         '/usr/bin/chromium',
         '/usr/bin/chromium-browser',
         '/usr/bin/google-chrome',
-        '/usr/bin/google-chrome-stable'
+        '/usr/bin/google-chrome-stable',
+        '/nix/store/qa9cnw4v5xkxyip6mb9kxqfq1z4x2dx1-chromium-138.0.7204.100/bin/chromium'
     ];
     
     for (const p of possiblePaths) {
@@ -30,6 +30,14 @@ const findChromiumPath = () => {
         const result = execSync('which chromium || which chromium-browser || which google-chrome 2>/dev/null', { encoding: 'utf8' }).trim();
         if (result && fs.existsSync(result)) {
             return result;
+        }
+    } catch (e) {
+    }
+    
+    try {
+        const nixResult = execSync('ls /nix/store/*/bin/chromium 2>/dev/null | head -1', { encoding: 'utf8' }).trim();
+        if (nixResult && fs.existsSync(nixResult)) {
+            return nixResult;
         }
     } catch (e) {
     }
