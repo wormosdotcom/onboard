@@ -99,7 +99,15 @@ app.use("/uploads", express.static(uploadsDir));
 
 // Serve static frontend build in production
 const clientDistPath = path.join(__dirname, "../client/dist");
-app.use(express.static(clientDistPath));
+console.log("Static files path:", clientDistPath);
+console.log("Static files exist:", fs.existsSync(clientDistPath));
+app.use(express.static(clientDistPath, { 
+    maxAge: 0,
+    etag: false,
+    setHeaders: (res) => {
+        res.set('Cache-Control', 'no-store');
+    }
+}));
 
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
