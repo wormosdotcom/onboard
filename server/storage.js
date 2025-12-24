@@ -1,9 +1,20 @@
-import { db } from './db.js';
+import { db, dbAvailable } from './db.js';
 import { vessels, tasks, taskComments, taskAttachments, endpoints, logs } from './schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 
+const checkDb = () => {
+    if (!db || !dbAvailable) {
+        throw new Error('Database not available. Please configure DATABASE_URL.');
+    }
+};
+
 export const storage = {
+    isAvailable() {
+        return dbAvailable && db !== null;
+    },
+
     async getVessels(userRole) {
+        checkDb();
         if (userRole === 'Admin') {
             return await db.select().from(vessels).orderBy(desc(vessels.createdAt));
         }

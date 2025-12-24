@@ -84,7 +84,18 @@ WhatsApp messages are sent when:
 - Admin-only API routes: `/api/whatsapp/*`
 - Service file: `server/whatsappService.js`
 
+## Production Deployment
+- Uses VM deployment (not autoscale) to ensure database access
+- Server runs on port 5000 in production (PORT env var)
+- Health check endpoints: `/health` and `/api/health`
+- Database URL sourced from `/tmp/replitdb` (production) or `DATABASE_URL` env var
+
 ## Recent Changes
+- 2025-12-24: Fixed production deployment issues
+  - Added health check endpoints for deployment verification
+  - Improved database connection handling (graceful fallback)
+  - Added dynamic Chromium path detection for WhatsApp
+  - Fixed missing fs import in server.js
 - 2025-12-24: Migrated to PostgreSQL database
   - Added Drizzle ORM with proper schema
   - Created storage.js abstraction layer

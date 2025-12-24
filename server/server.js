@@ -602,6 +602,20 @@ app.post("/api/vessels/:id/endpoint-timer/stop", requireAuth, (req, res) => {
     res.json({ok: true, elapsed: vessel.endpointElapsedSeconds});
 });
 
+// Health check endpoint for deployment
+app.get("/health", (req, res) => {
+    res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+app.get("/api/health", (req, res) => {
+    const dbStatus = dbStorage.isAvailable ? dbStorage.isAvailable() : false;
+    res.status(200).json({ 
+        status: "ok", 
+        database: dbStatus ? "connected" : "unavailable",
+        timestamp: new Date().toISOString() 
+    });
+});
+
 // Vessels
 app.get("/api/vessels", async (req, res) => {
     try {
