@@ -17,7 +17,8 @@ import {
     getGroups as getWhatsAppGroups,
     setGroupChatId,
     sendNotification,
-    scheduleReconnect
+    scheduleReconnect,
+    stopWhatsApp
 } from "./whatsappService.js";
 import { storage as dbStorage } from "./storage.js";
 
@@ -382,38 +383,29 @@ let lastTick = Date.now();
 //     if (changed) broadcastSnapshot();
 // }, 1000);
 
-setInterval(() => {
+setInterval(async () => {
     const now = Date.now();
     const diff = Math.floor((now - lastTick) / 1000);
     if (diff <= 0) return;
     lastTick = now;
     let changed = false;
 
-    // tasks
-    tasks.forEach((t) => {
-        if (t.status === "in_progress") {
-            t.elapsed_seconds = (t.elapsed_seconds || 0) + diff;
-            changed = true;
-        }
-    });
+    // Persist timers in DB for in-progress tasks
+    try {
+        const taskTimersUpdated = await dbStorage.incrementTaskTimers(diff);
+        if (taskTimersUpdated) changed = true;
+    } catch (err) {
+        console.error('Error updating task timers:', err);
+    }
 
-    // per endpoint timers
-    endpoints.forEach((ep) => {
-        if (ep.timerRunning) {
-            ep.elapsedSeconds = (ep.elapsedSeconds || 0) + diff;
-            changed = true;
-        }
-    });
+    try {
+        const endpointTimersUpdated = await dbStorage.incrementEndpointTimers(diff);
+        if (endpointTimersUpdated) changed = true;
+    } catch (err) {
+        console.error('Error updating endpoint timers:', err);
+    }
 
-    // old vessel level endpoint timer (keep if you still like the global view)
-    vessels.forEach((v) => {
-        if (v.endpointTimerStart && !v.endpointTimerEnd) {
-            v.endpointElapsedSeconds = Math.floor((Date.now() - v.endpointTimerStart) / 1000);
-            changed = true;
-        }
-    });
-
-    if (changed) broadcastSnapshot();
+    if (changed) await broadcastSnapshot();
 }, 1000);
 
 async function buildSnapshot(userRole = 'Admin') {
@@ -524,32 +516,38 @@ app.post(
     "/api/endpoints/:id/assign",
     requireAuth,
     requireRole("Admin", "Onboard Eng"),
-    (req, res) => {
-        const {id} = req.params;
-        const {userId} = req.body;
-        const endpoint = endpoints.find(ep => ep.id === id);
-        if (!endpoint) {
-            return res.status(404).json({message: "Endpoint not found"});
+    async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { userId } = req.body;
+
+            const endpoint = await dbStorage.getEndpoint(id);
+            if (!endpoint) {
+                return res.status(404).json({ message: "Endpoint not found" });
+            }
+            const user = users.find(u => u.id === Number(userId));
+            if (!user) {
+                return res.status(400).json({ message: "User not found" });
+            }
+
+            const updated = await dbStorage.updateEndpoint(id, { assignedTo: userId });
+
+            await addLog(
+                endpoint.vesselId,
+                `Endpoint "${endpoint.label}" assigned to ${user.name} (${user.role})`,
+                req
+            );
+
+            await broadcastSnapshot();
+
+            res.json({
+                message: "Endpoint assigned successfully",
+                endpoint: updated,
+            });
+        } catch (err) {
+            console.error('Error assigning endpoint:', err);
+            res.status(500).json({ error: "Failed to assign endpoint" });
         }
-        const user = users.find(u => u.id === Number(userId));
-        if (!user) {
-            return res.status(400).json({message: "User not found"});
-        }
-
-        endpoint.assignedTo = userId;
-
-        addLog(
-            endpoint.vesselId,
-            `Endpoint "${endpoint.label}" assigned to ${user.name} (${user.role})`,
-            req
-        );
-
-        broadcastSnapshot();
-
-        res.json({
-            message: "Endpoint assigned successfully",
-            endpoint,
-        });
     }
 );
 
@@ -730,9 +728,14 @@ app.get("/api/vessels/:id/tasks", (req, res) => {
     res.json({tasks: list});
 });
 
-app.get("/api/vessels/:id/endpoints", (req, res) => {
-    const list = endpoints.filter(e => e.vesselId === req.params.id);
-    res.json({endpoints: list});
+app.get("/api/vessels/:id/endpoints", async (req, res) => {
+    try {
+        const list = await dbStorage.getEndpoints(req.params.id);
+        res.json({ endpoints: list });
+    } catch (err) {
+        console.error('Error fetching endpoints:', err);
+        res.status(500).json({ error: "Failed to load endpoints" });
+    }
 });
 
 app.post("/api/vessels/:id/tasks", requireAuth, requireRole("Admin", "Remote Team"), (req, res) => {
@@ -756,19 +759,25 @@ app.post("/api/vessels/:id/tasks", requireAuth, requireRole("Admin", "Remote Tea
     res.json(task);
 });
 
-app.post("/api/endpoints/:id/field", requireAuth, (req, res) => {
-    const ep = endpoints.find(e => String(e.id) === String(req.params.id));
-    if (!ep) return res.status(404).json({error: "Endpoint not found"});
+app.post("/api/endpoints/:id/field", requireAuth, async (req, res) => {
+    try {
+        const ep = await dbStorage.getEndpoint(req.params.id);
+        if (!ep) return res.status(404).json({ error: "Endpoint not found" });
 
-    const {field, value} = req.body;
-    if (!field) return res.status(400).json({error: "Field required"});
+        const { field, value } = req.body;
+        if (!field) return res.status(400).json({ error: "Field required" });
 
-    ep.fields[field] = value || "pending";
+        const newFields = { ...(ep.fields || {}), [field]: value || "pending" };
+        const updated = await dbStorage.updateEndpoint(ep.id, { fields: newFields });
 
-    addLog(ep.vesselId, `Endpoint Updated Field "${field}" updated on ${ep.label}`);
-    broadcastSnapshot();
+        await addLog(ep.vesselId, `Endpoint Updated Field "${field}" updated on ${ep.label}`, req);
+        await broadcastSnapshot();
 
-    res.json({ok: true, endpoint: ep});
+        res.json({ ok: true, endpoint: updated });
+    } catch (err) {
+        console.error('Error updating endpoint field:', err);
+        res.status(500).json({ error: "Failed to update endpoint field" });
+    }
 });
 
 async function findTask(id) {
@@ -1131,66 +1140,87 @@ function canControlEndpoint(endpoint, user) {
 
 
 // Start endpoint timer
-app.post("/api/endpoints/:id/start", requireAuth, (req, res) => {
-    const ep = endpoints.find((e) => String(e.id) === String(req.params.id));
-    if (!ep) return res.status(404).json({error: "Endpoint not found"});
+app.post("/api/endpoints/:id/start", requireAuth, async (req, res) => {
+    try {
+        const ep = await dbStorage.getEndpoint(req.params.id);
+        if (!ep) return res.status(404).json({ error: "Endpoint not found" });
 
-    if (!canControlEndpoint(ep, req.user)) {
-        return res.status(403).json({
-            message: "You are not allowed to control this endpoint timer",
+        if (!canControlEndpoint(ep, req.user)) {
+            return res.status(403).json({
+                message: "You are not allowed to control this endpoint timer",
+            });
+        }
+
+        if (ep.status === "done") {
+            return res.status(400).json({ error: "Endpoint already completed" });
+        }
+
+        const updated = await dbStorage.updateEndpoint(ep.id, {
+            status: "in_progress",
+            timerRunning: true
         });
+
+        await addLog(ep.vesselId, `Endpoint Started Endpoint "${ep.label}" started`, req);
+        await broadcastSnapshot();
+        res.json({ ok: true, endpoint: updated });
+    } catch (err) {
+        console.error('Error starting endpoint:', err);
+        res.status(500).json({ error: "Failed to start endpoint" });
     }
-
-    if (ep.status === "done") {
-        return res.status(400).json({error: "Endpoint already completed"});
-    }
-
-    ep.status = "in_progress";
-    ep.timerRunning = true;
-
-    addLog(ep.vesselId, `Endpoint Started Endpoint "${ep.label}" started`, req);
-    broadcastSnapshot();
-    res.json({ok: true, endpoint: ep});
 });
 
 // Pause endpoint timer
-app.post("/api/endpoints/:id/pause", requireAuth, (req, res) => {
-    const ep = endpoints.find((e) => String(e.id) === String(req.params.id));
-    if (!ep) return res.status(404).json({error: "Endpoint not found"});
+app.post("/api/endpoints/:id/pause", requireAuth, async (req, res) => {
+    try {
+        const ep = await dbStorage.getEndpoint(req.params.id);
+        if (!ep) return res.status(404).json({ error: "Endpoint not found" });
 
-    if (ep.status !== "in_progress") {
-        return res.status(400).json({error: "Only in progress endpoint can be paused"});
+        if (ep.status !== "in_progress") {
+            return res.status(400).json({ error: "Only in progress endpoint can be paused" });
+        }
+
+        const updated = await dbStorage.updateEndpoint(ep.id, {
+            status: "paused",
+            timerRunning: false
+        });
+
+        await addLog(ep.vesselId, `Endpoint Paused Endpoint "${ep.label}" paused`, req);
+        await broadcastSnapshot();
+        res.json({ ok: true, endpoint: updated });
+    } catch (err) {
+        console.error('Error pausing endpoint:', err);
+        res.status(500).json({ error: "Failed to pause endpoint" });
     }
-
-    ep.status = "paused";
-    ep.timerRunning = false;
-
-    addLog(ep.vesselId, `Endpoint Paused Endpoint "${ep.label}" paused`, req);
-    broadcastSnapshot();
-    res.json({ok: true, endpoint: ep});
 });
 
 // Mark endpoint done
-app.post("/api/endpoints/:id/done", requireAuth, (req, res) => {
-    const ep = endpoints.find((e) => String(e.id) === String(req.params.id));
-    if (!ep) return res.status(404).json({error: "Endpoint not found"});
+app.post("/api/endpoints/:id/done", requireAuth, async (req, res) => {
+    try {
+        const ep = await dbStorage.getEndpoint(req.params.id);
+        if (!ep) return res.status(404).json({ error: "Endpoint not found" });
 
-    if (!canControlEndpoint(ep, req.user)) {
-        return res.status(403).json({
-            message: "You are not allowed to control this endpoint timer",
+        if (!canControlEndpoint(ep, req.user)) {
+            return res.status(403).json({
+                message: "You are not allowed to control this endpoint timer",
+            });
+        }
+
+        if (ep.status === "done") {
+            return res.status(400).json({ error: "Endpoint already done" });
+        }
+
+        const updated = await dbStorage.updateEndpoint(ep.id, {
+            status: "done",
+            timerRunning: false
         });
+
+        await addLog(ep.vesselId, `Endpoint Done Endpoint "${ep.label}" marked done`, req);
+        await broadcastSnapshot();
+        res.json({ ok: true, endpoint: updated });
+    } catch (err) {
+        console.error('Error completing endpoint:', err);
+        res.status(500).json({ error: "Failed to complete endpoint" });
     }
-
-    if (ep.status === "done") {
-        return res.status(400).json({error: "Endpoint already done"});
-    }
-
-    ep.status = "done";
-    ep.timerRunning = false;
-
-    addLog(ep.vesselId, `Endpoint Done Endpoint "${ep.label}" marked done`, req);
-    broadcastSnapshot();
-    res.json({ok: true, endpoint: ep});
 });
 
 
@@ -1217,6 +1247,16 @@ app.post("/api/whatsapp/init", requireAuth, requireRole("Admin"), (req, res) => 
     initWhatsApp();
     scheduleReconnect();
     res.json({ message: "WhatsApp initialization started" });
+});
+
+app.post("/api/whatsapp/stop", requireAuth, requireRole("Admin"), async (req, res) => {
+    try {
+        await stopWhatsApp();
+        res.json({ message: "WhatsApp client stopped" });
+    } catch (err) {
+        console.error('Error stopping WhatsApp:', err);
+        res.status(500).json({ error: "Failed to stop WhatsApp client" });
+    }
 });
 
 app.get("/api/whatsapp/groups", requireAuth, requireRole("Admin"), async (req, res) => {

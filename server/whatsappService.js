@@ -10,6 +10,8 @@ let isReady = false;
 let connectionStatus = 'disconnected';
 let groupChatId = null;
 let lastError = null;
+let manualStop = false;
+let reconnectInterval = null;
 
 const findChromiumPath = () => {
     const possiblePaths = [
@@ -17,6 +19,8 @@ const findChromiumPath = () => {
         '/usr/bin/chromium-browser',
         '/usr/bin/google-chrome',
         '/usr/bin/google-chrome-stable',
+        // macOS Google Chrome app bundle
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
         '/nix/store/qa9cnw4v5xkxyip6mb9kxqfq1z4x2dx1-chromium-138.0.7204.100/bin/chromium'
     ];
     
@@ -46,6 +50,8 @@ const findChromiumPath = () => {
 };
 
 const initWhatsApp = () => {
+    manualStop = false; // allow reconnect/start
+
     if (client) {
         return;
     }
@@ -189,41 +195,76 @@ const formatExpectedTime = (seconds) => {
     return `${mins}m`;
 };
 
+const choose = (options = []) => {
+    if (!options.length) return '';
+    const idx = Math.floor(Math.random() * options.length);
+    return options[idx];
+};
+
 const sendNotification = async (actionType, details) => {
-    let message = '';
+    const formattedExpected = details.expectedTime ? formatExpectedTime(details.expectedTime) : '';
+    const shortComment = details.comment ? String(details.comment).slice(0, 140) : '';
 
-    switch (actionType) {
-        case 'TASK_STARTED':
-            const expectedTime = details.expectedTime ? `\n⏱️ Expected: ${formatExpectedTime(details.expectedTime)}` : '';
-            message = `🟢 *Task Started*\n📋 ${details.taskTitle}${expectedTime}`;
-            break;
-        case 'TASK_PAUSED':
-            const pauseComment = details.comment ? `\n💬 "${details.comment}"` : '';
-            message = `⏸️ *Task Paused*\n📋 ${details.taskTitle}${pauseComment}`;
-            break;
-        case 'TASK_DONE':
-            message = `✅ *Task Completed*\n📋 ${details.taskTitle}`;
-            break;
-        case 'COMMENT_ADDED':
-            message = `💬 *Comment*\n📋 ${details.taskTitle}\n"${details.comment}"`;
-            break;
-        case 'VESSEL_CREATED':
-            message = `🚢 *New Vessel*\n📛 ${details.vesselName}`;
-            break;
-        case 'ENDPOINT_STARTED':
-            message = `🟢 *Endpoint Started*\n💻 ${details.endpointLabel}`;
-            break;
-        case 'ENDPOINT_DONE':
-            message = `✅ *Endpoint Done*\n💻 ${details.endpointLabel}`;
-            break;
-        default:
-            message = `📢 ${actionType}`;
-    }
+    const templates = {
+        TASK_STARTED: [
+            `Started: ${details.taskTitle}${formattedExpected ? ` (expected ${formattedExpected})` : ''}`,
+            `We kicked off "${details.taskTitle}"${formattedExpected ? `, target ${formattedExpected}` : ''}`,
+            `Task in progress: ${details.taskTitle}${formattedExpected ? ` — aiming for ${formattedExpected}` : ''}`
+        ],
+        TASK_PAUSED: [
+            `Paused: ${details.taskTitle}${shortComment ? ` — note: ${shortComment}` : ''}`,
+            `Holding on "${details.taskTitle}"${shortComment ? `; reason: ${shortComment}` : ''}`,
+            `${details.taskTitle} is paused${shortComment ? ` (note: ${shortComment})` : ''}`
+        ],
+        TASK_DONE: [
+            `Finished: ${details.taskTitle}`,
+            `Completed: ${details.taskTitle}`,
+            `Wrapped up "${details.taskTitle}"`
+        ],
+        COMMENT_ADDED: [
+            `Update on ${details.taskTitle}: "${shortComment}"`,
+            `New note for ${details.taskTitle}: "${shortComment}"`,
+            `Comment on "${details.taskTitle}": "${shortComment}"`
+        ],
+        VESSEL_CREATED: [
+            `New vessel added: ${details.vesselName}`,
+            `Vessel onboarded: ${details.vesselName}`,
+            `Added vessel ${details.vesselName}`
+        ],
+        ENDPOINT_STARTED: [
+            `Endpoint started: ${details.endpointLabel}`,
+            `Working on endpoint "${details.endpointLabel}"`,
+            `Began endpoint: ${details.endpointLabel}`
+        ],
+        ENDPOINT_DONE: [
+            `Endpoint completed: ${details.endpointLabel}`,
+            `Finished endpoint "${details.endpointLabel}"`,
+            `Endpoint done: ${details.endpointLabel}`
+        ]
+    };
 
+    const message = choose(templates[actionType] || [`${actionType}`]);
     return await sendMessage(message);
 };
 
-let reconnectInterval = null;
+const stopWhatsApp = async () => {
+    manualStop = true;
+    if (reconnectInterval) {
+        clearInterval(reconnectInterval);
+        reconnectInterval = null;
+    }
+    if (client) {
+        try {
+            await client.destroy();
+        } catch (err) {
+            console.error('Error stopping WhatsApp client:', err);
+        }
+    }
+    client = null;
+    isReady = false;
+    connectionStatus = 'stopped';
+    qrCodeData = null;
+};
 
 const scheduleReconnect = () => {
     if (reconnectInterval) {
@@ -236,8 +277,12 @@ const scheduleReconnect = () => {
     console.log(`WhatsApp reconnect scheduled in ${reconnectHours.toFixed(1)} hours`);
     
     reconnectInterval = setInterval(async () => {
+        if (manualStop) {
+            // user intentionally stopped; skip auto reconnect
+            return;
+        }
         console.log('WhatsApp: Starting scheduled reconnect...');
-        
+
         if (client && isReady) {
             try {
                 await client.destroy();
@@ -266,5 +311,6 @@ export {
     setGroupChatId,
     sendMessage,
     sendNotification,
-    scheduleReconnect
+    scheduleReconnect,
+    stopWhatsApp
 };

@@ -63,6 +63,8 @@ const ENDPOINT_FIELD_LABELS = {
     bvs: "BVS"
 };
 
+const ENDPOINT_KEYS = Object.keys(ENDPOINT_FIELD_LABELS);
+
 export default function App() {
     const [snapshot, setSnapshot] = useState({vessels: [], tasks: [], logs: []});
     const [selectedVesselId, setSelectedVesselId] = useState(null);
@@ -260,22 +262,16 @@ export default function App() {
     useEffect(() => {
         socket.on("snapshot", (data) => {
             setSnapshot(data);
-
-            const currentId = selectedVesselId;
-            const list = data.vessels || [];
-
-            if (!currentId && list.length) {
-                setSelectedVesselId(list[0].id);
-            } else if (currentId && !list.find(v => v.id === currentId)) {
-                // previously selected vessel no longer exists
-                setSelectedVesselId(list[0]?.id || null);
-            }
         });
 
         return () => socket.off("snapshot");
-    }, [selectedVesselId]);
+    }, []);
 
-    const vessels = snapshot.vessels || [];
+    const vessels = useMemo(() => {
+        const list = snapshot.vessels || [];
+        if (auth?.role === "Admin") return list;
+        return list.filter(v => !v.hidden);
+    }, [snapshot.vessels, auth]);
     const tasks = snapshot.tasks || [];
     const logs = snapshot.logs || [];
     console.log("=====")
@@ -289,6 +285,15 @@ export default function App() {
         return auth?.id === task.assignedTo
     }
     const isAdminOrEngineer = auth?.role === "Admin" || auth?.role === "Onboard Eng";
+
+    useEffect(() => {
+        const list = vessels;
+        if (!selectedVesselId && list.length) {
+            setSelectedVesselId(list[0].id);
+        } else if (selectedVesselId && !list.find(v => v.id === selectedVesselId)) {
+            setSelectedVesselId(list[0]?.id || null);
+        }
+    }, [vessels, selectedVesselId]);
 
     const selectedVessel = useMemo(() => vessels.find((v) => v.id === selectedVesselId) || null, [vessels, selectedVesselId]);
 
@@ -316,9 +321,12 @@ export default function App() {
         return "done";
     };
 
-    const handleEndpointFieldChange = async (endpointId, field, assignedTo) => {
-        // if (!isEngineer) return;
-        if (!(auth.id === assignedTo.id)) return;
+    const handleEndpointFieldChange = async (endpointId, field, assignedUser) => {
+        if (!auth || isClient) return;
+        const isAdminUser = auth.role === "Admin";
+        const isAssignedUser = assignedUser && auth.id === assignedUser.id;
+        if (!isAdminUser && !isAssignedUser) return;
+
         const ep = vesselEndpoints.find((e) => e.id === endpointId);
         const current = (ep && ep.fields && ep.fields[field]) || "pending";
         const next = cycleEndpointStatus(current);
@@ -1385,17 +1393,6 @@ export default function App() {
                             {/*            </button>)}*/}
                             {/*        </div>)}*/}
                             {/*    </div>*/}
-                            <div className="endpoint-timer-bar">
-                                <div className="et-left">
-                                    <strong>Total Elapsed:</strong> {formatTime(totalEndpointElapsed)}
-                                    <strong style={{marginLeft: "16px"}}>Avg per Endpoint:</strong>{" "}
-                                    {formatTime(avgEndpointElapsed)}
-                                    <span style={{marginLeft: "16px"}} className="muted small">
-      Target: 30 min per endpoint
-    </span>
-                                </div>
-                            </div>
-
                             <div className="endpoint-header">
                                 <h3>Endpoint Configuration Checklist</h3>
                                 <p className="muted small">
@@ -1419,14 +1416,10 @@ export default function App() {
                                     <tr>
                                         <th>Endpoint</th>
                                         {isClient ? null : <th>Assignee</th>}
-                                        {Object.keys(ENDPOINT_FIELD_LABELS).map(fieldKey => (
+                                        {ENDPOINT_KEYS.map(fieldKey => (
                                             <th key={fieldKey}>{ENDPOINT_FIELD_LABELS[fieldKey]}</th>
                                         ))}
                                         <th>Timer / Status</th>
-                                        {Object.keys(vesselEndpoints[0].fields || {}).map((fieldKey) => (
-                                            <th key={fieldKey}>
-                                                {ENDPOINT_FIELD_LABELS[fieldKey] || fieldKey}
-                                            </th>))}
                                     </tr>
                                     </thead>
 
@@ -1468,6 +1461,17 @@ export default function App() {
                                                 )}
                                             </td> : null}
 
+                                            {ENDPOINT_KEYS.map((fieldKey) => {
+                                                const val = ep.fields?.[fieldKey] || "pending";
+                                                return (<td
+                                                    key={fieldKey}
+                                                    className={"endpoint-cell status-" + val + (!isClient ? " clickable" : "")}
+                                                    onClick={!isClient ? () => handleEndpointFieldChange(ep.id, fieldKey, assignedUser) : undefined}
+                                                >
+                                                    {val === "done" ? "✓" : val === "na" ? "N/A" : ""}
+                                                </td>);
+                                            })}
+
                                             <td className="endpoint-timer-cell">
                                                 <div className="endpoint-timer-info small">
                                                     <span>{formatTime(ep.elapsedSeconds || 0)}</span>
@@ -1504,17 +1508,6 @@ export default function App() {
                                                         </button>)}
                                                 </div>)}
                                             </td>
-
-                                            {fieldKeys.map((fieldKey) => {
-                                                const val = ep.fields?.[fieldKey] || "pending";
-                                                return (<td
-                                                    key={fieldKey}
-                                                    className={"endpoint-cell status-" + val + (!isClient ? " clickable" : "")}
-                                                    onClick={!isClient ? () => handleEndpointFieldChange(ep.id, fieldKey, assignedUser) : undefined}
-                                                >
-                                                    {val === "done" ? "✓" : val === "na" ? "N/A" : ""}
-                                                </td>);
-                                            })}
                                         </tr>);
                                     })}
                                     </tbody>

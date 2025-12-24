@@ -1,6 +1,6 @@
 import { db, dbAvailable } from './db.js';
 import { vessels, tasks, taskComments, taskAttachments, endpoints, logs } from './schema.js';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 
 const checkDb = () => {
     if (!db || !dbAvailable) {
@@ -75,7 +75,7 @@ export const storage = {
     },
 
     async getAllTasks() {
-        const taskList = await db.select().from(tasks);
+        const taskList = await db.select().from(tasks).orderBy(tasks.taskNumber);
         const tasksWithDetails = await Promise.all(taskList.map(async (task) => {
             const comments = await db.select().from(taskComments).where(eq(taskComments.taskId, task.id)).orderBy(taskComments.createdAt);
             const attachments = await db.select().from(taskAttachments).where(eq(taskAttachments.taskId, task.id));
@@ -210,7 +210,9 @@ export const storage = {
     },
 
     async getEndpoints(vesselId) {
-        const endpointList = await db.select().from(endpoints).where(eq(endpoints.vesselId, vesselId));
+        const endpointList = await db.select().from(endpoints)
+            .where(eq(endpoints.vesselId, vesselId))
+            .orderBy(endpoints.createdAt);
         return endpointList.map(ep => ({
             id: ep.id,
             vesselId: ep.vesselId,
@@ -224,7 +226,7 @@ export const storage = {
     },
 
     async getAllEndpoints() {
-        const endpointList = await db.select().from(endpoints);
+        const endpointList = await db.select().from(endpoints).orderBy(endpoints.createdAt);
         return endpointList.map(ep => ({
             id: ep.id,
             vesselId: ep.vesselId,
@@ -317,5 +319,23 @@ export const storage = {
             userAgent: req?.get?.('User-Agent') || 'unknown'
         }).returning();
         return log;
+    },
+
+    // Increment elapsedSeconds for all in-progress tasks in one query.
+    async incrementTaskTimers(diffSeconds) {
+        const updated = await db.update(tasks)
+            .set({ elapsedSeconds: sql`${tasks.elapsedSeconds} + ${diffSeconds}` })
+            .where(eq(tasks.status, 'in_progress'))
+            .returning({ id: tasks.id });
+        return updated.length > 0;
+    },
+
+    // Increment elapsedSeconds for endpoints whose timers are running.
+    async incrementEndpointTimers(diffSeconds) {
+        const updated = await db.update(endpoints)
+            .set({ elapsedSeconds: sql`${endpoints.elapsedSeconds} + ${diffSeconds}` })
+            .where(eq(endpoints.timerRunning, true))
+            .returning({ id: endpoints.id });
+        return updated.length > 0;
     }
 };
