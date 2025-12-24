@@ -408,6 +408,19 @@ export default function App() {
         });
     };
 
+    const handleToggleVesselVisibility = async (vesselId, currentHidden) => {
+        if (auth?.role !== "Admin") return;
+        
+        await fetch(`${BASE_URL}/api/vessels/${vesselId}/visibility`, {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+                ...(auth?.token ? {Authorization: `Bearer ${auth.token}`} : {})
+            },
+            body: JSON.stringify({hidden: !currentHidden})
+        });
+    };
+
     const canControlEndpoint = (endpoint) => {
         if (!auth) return false;
         // Admin full control
@@ -931,11 +944,23 @@ export default function App() {
                                         >
                                             ✕
                                         </button>
+                                        {auth?.role === "Admin" && (
+                                            <button
+                                                className="vessel-hide-btn"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleToggleVesselVisibility(v.id, v.hidden);
+                                                }}
+                                                title={v.hidden ? "Show vessel to all users" : "Hide vessel from non-admins"}
+                                            >
+                                                {v.hidden ? "👁" : "👁‍🗨"}
+                                            </button>
+                                        )}
                                     </div>
                                 )}
                             </div>
                             <div className="vessel-meta">
-                                <span>IMO: {v.imo || "No IMO"}</span>
+                                <span>IMO: {v.imo || "No IMO"}{v.hidden && <span className="hidden-badge"> (Hidden)</span>}</span>
                                 <span>{pct}%</span>
                             </div>
                             <div className="vessel-progress">

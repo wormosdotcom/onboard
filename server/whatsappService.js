@@ -173,6 +173,41 @@ const sendNotification = async (actionType, details) => {
     return await sendMessage(message);
 };
 
+let reconnectInterval = null;
+
+const scheduleReconnect = () => {
+    if (reconnectInterval) {
+        clearInterval(reconnectInterval);
+    }
+    
+    const reconnectHours = 4 + Math.random() * 2;
+    const reconnectMs = reconnectHours * 60 * 60 * 1000;
+    
+    console.log(`WhatsApp reconnect scheduled in ${reconnectHours.toFixed(1)} hours`);
+    
+    reconnectInterval = setInterval(async () => {
+        console.log('WhatsApp: Starting scheduled reconnect...');
+        
+        if (client && isReady) {
+            try {
+                await client.destroy();
+                console.log('WhatsApp: Client destroyed for reconnect');
+            } catch (err) {
+                console.error('WhatsApp: Error destroying client:', err);
+            }
+            
+            client = null;
+            isReady = false;
+            connectionStatus = 'reconnecting';
+            
+            setTimeout(() => {
+                console.log('WhatsApp: Reinitializing after pause...');
+                initWhatsApp();
+            }, 60000);
+        }
+    }, reconnectMs);
+};
+
 export {
     initWhatsApp,
     getStatus,
@@ -180,5 +215,6 @@ export {
     getGroups,
     setGroupChatId,
     sendMessage,
-    sendNotification
+    sendNotification,
+    scheduleReconnect
 };

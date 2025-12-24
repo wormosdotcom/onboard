@@ -15,8 +15,10 @@ import {
     getQrCode,
     getGroups as getWhatsAppGroups,
     setGroupChatId,
-    sendNotification
+    sendNotification,
+    scheduleReconnect
 } from "./whatsappService.js";
+import { storage as dbStorage } from "./storage.js";
 
 const JWT_SECRET = "27389d24611f3c82ecbcf407162a22daa95f56e1";// move to env in prod
 
@@ -124,21 +126,12 @@ let tasks = [];
 let logs = [];
 let endpoints = [];
 
-function addLog(vesselId, actionText, req = null) {
-    const entry = {
-        id: Date.now() + "-" + Math.random().toString(36).slice(2),
-        vesselId,
-        action: actionText,
-        timestamp: new Date().toISOString(), // NEW FIELDS:
-        user: req?.user?.name || "Unknown",
-        userId: req?.user?.id || null,
-        role: req?.user?.role || "Unknown",
-        ip: req ? req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress : null,
-        userAgent: req ? req.headers["user-agent"] : null
-    };
-
-    logs.push(entry);
-    broadcastSnapshot();
+async function addLog(vesselId, actionText, req = null) {
+    try {
+        await dbStorage.addLog(vesselId, actionText, req);
+    } catch (err) {
+        console.error('Error adding log:', err);
+    }
 }
 
 const TASK_GROUPS = ["Network Setup", "Email & Communication", "Software Installations", "Server Setup", "Verification & Handover"];
@@ -414,19 +407,51 @@ setInterval(() => {
     if (changed) broadcastSnapshot();
 }, 1000);
 
-function snapshot() {
-    return {
-        vessels, tasks, logs, endpoints, users
-    };
+async function buildSnapshot(userRole = 'Admin') {
+    try {
+        const vesselList = await dbStorage.getVessels(userRole);
+        const taskList = await dbStorage.getAllTasks();
+        const logList = await dbStorage.getAllLogs();
+        const endpointList = await dbStorage.getAllEndpoints();
+        return {
+            vessels: vesselList,
+            tasks: taskList,
+            logs: logList,
+            endpoints: endpointList,
+            users
+        };
+    } catch (err) {
+        console.error('Error building snapshot:', err);
+        return { vessels: [], tasks: [], logs: [], endpoints: [], users };
+    }
 }
 
-function broadcastSnapshot() {
-    io.emit("snapshot", snapshot());
+let cachedSnapshot = null;
+let snapshotCacheTime = 0;
+const SNAPSHOT_CACHE_TTL = 500;
+
+async function getCachedSnapshot(userRole = 'Admin') {
+    const now = Date.now();
+    if (!cachedSnapshot || (now - snapshotCacheTime) > SNAPSHOT_CACHE_TTL) {
+        cachedSnapshot = await buildSnapshot(userRole);
+        snapshotCacheTime = now;
+    }
+    return cachedSnapshot;
 }
 
-// Socket connections
-io.on("connection", (socket) => {
-    socket.emit("snapshot", snapshot());
+function invalidateSnapshotCache() {
+    cachedSnapshot = null;
+}
+
+async function broadcastSnapshot() {
+    invalidateSnapshotCache();
+    const snap = await buildSnapshot('Admin');
+    io.emit("snapshot", snap);
+}
+
+io.on("connection", async (socket) => {
+    const snap = await buildSnapshot('Admin');
+    socket.emit("snapshot", snap);
 });
 
 // REST API
@@ -577,63 +602,93 @@ app.post("/api/vessels/:id/endpoint-timer/stop", requireAuth, (req, res) => {
 });
 
 // Vessels
-app.get("/api/vessels", (req, res) => {
-    res.json({vessels});
+app.get("/api/vessels", async (req, res) => {
+    try {
+        const userRole = req.user?.role || 'Client';
+        const vesselList = await dbStorage.getVessels(userRole);
+        res.json({vessels: vesselList});
+    } catch (err) {
+        console.error('Error getting vessels:', err);
+        res.status(500).json({error: "Failed to get vessels"});
+    }
 });
 
-app.post("/api/vessels", requireAuth, requireRole("Admin", "Onboard Eng"), (req, res) => {
+app.patch("/api/vessels/:id/visibility", requireAuth, requireRole("Admin"), async (req, res) => {
+    try {
+        const { hidden } = req.body;
+        const vessel = await dbStorage.updateVessel(req.params.id, { hidden: !!hidden });
+        if (!vessel) {
+            return res.status(404).json({error: "Vessel not found"});
+        }
+        await addLog(vessel.id, `Vessel ${hidden ? 'hidden' : 'shown'} by admin`, req);
+        await broadcastSnapshot();
+        res.json(vessel);
+    } catch (err) {
+        console.error('Error updating vessel visibility:', err);
+        res.status(500).json({error: "Failed to update vessel"});
+    }
+});
+
+app.post("/api/vessels", requireAuth, requireRole("Admin", "Onboard Eng"), async (req, res) => {
     const {name, imo} = req.body;
     if (!name) return res.status(400).json({error: "Name required"});
-    const vessel = {
-        id: Date.now() + "-" + Math.random().toString(36).slice(2),
-        name,
-        imo: imo || "",
-        status: "not_started",
-        createdAt: new Date().toISOString(),
-        endpointTimerStart: null,
-        endpointTimerEnd: null,
-        endpointElapsedSeconds: 0,
-    };
-    vessels.push(vessel);
-    TEMPLATE_TASKS.forEach((tpl, idx) => {
-        const tid = Date.now() + idx + Math.random();
-        tasks.push({
-            id: tid,
-            vesselId: vessel.id,
-            title: tpl.title,
-            group: tpl.group,
-            status: "pending",
-            elapsed_seconds: 0,
-            deadline_seconds: tpl.deadline_seconds,
-            comments: [],
-            attachments: [],
-            taskNumber: tpl.taskNumber
+    
+    try {
+        const vesselId = Date.now() + "-" + Math.random().toString(36).slice(2);
+        const vessel = await dbStorage.createVessel({
+            id: vesselId,
+            name,
+            imo: imo || "",
+            status: "not_started",
+            hidden: false
         });
-    });
+        
+        for (let idx = 0; idx < TEMPLATE_TASKS.length; idx++) {
+            const tpl = TEMPLATE_TASKS[idx];
+            const tid = Date.now() + idx + Math.random();
+            await dbStorage.createTask({
+                id: String(tid),
+                vesselId: vessel.id,
+                title: tpl.title,
+                group: tpl.group,
+                status: "pending",
+                elapsed_seconds: 0,
+                deadline_seconds: tpl.deadline_seconds,
+                taskNumber: tpl.taskNumber,
+                assignedTo: tpl.assignedTo
+            });
+        }
 
-    const ENDPOINT_NAMES = ["Bridge", "Master", "Shoff", "Shoff 2", "ECR", "ECR 2", "Cheng", "CDR", "CDR 2", "Loader", "Chart"];
+        const ENDPOINT_NAMES = ["Bridge", "Master", "Shoff", "Shoff 2", "ECR", "ECR 2", "Cheng", "CDR", "CDR 2", "Loader", "Chart"];
 
-    ENDPOINT_NAMES.forEach((label) => {
-        endpoints.push({
-            id: Date.now() + "-ep-" + Math.random().toString(36).slice(2),
-            vesselId: vessel.id,
-            label,
-            fields: {...TEMPLATE_ENDPOINT_FIELDS}, assignedTo: null,
-        });
-    });
+        for (const label of ENDPOINT_NAMES) {
+            const fields = {...TEMPLATE_ENDPOINT_FIELDS};
+            if (label === "Bridge") {
+                fields.oneOcean = "pending";
+                fields.bvs = "pending";
+            }
+            if (label === "Master") {
+                fields.bvs = "pending";
+            }
+            await dbStorage.createEndpoint({
+                id: Date.now() + "-ep-" + Math.random().toString(36).slice(2),
+                vesselId: vessel.id,
+                label,
+                fields,
+                assignedTo: null,
+                status: "not_started",
+                timerRunning: false,
+                elapsedSeconds: 0
+            });
+        }
 
-    // Apply special endpoint rules
-    endpoints.filter(e => e.vesselId === vessel.id && e.label === "Bridge").forEach(e => {
-        e.fields.oneOcean = "pending";
-        e.fields.bvs = "pending";
-    });
-    endpoints.filter(e => e.vesselId === vessel.id && e.label === "Master").forEach(e => {
-        e.fields.bvs = "pending";
-    });
-
-    addLog(vessel.id, `Vessel Created Vessel \"${name}\" created.`, req);
-    broadcastSnapshot();
-    res.json(vessel);
+        await addLog(vessel.id, `Vessel Created Vessel \"${name}\" created.`, req);
+        await broadcastSnapshot();
+        res.json(vessel);
+    } catch (err) {
+        console.error('Error creating vessel:', err);
+        res.status(500).json({error: "Failed to create vessel"});
+    }
 });
 
 // Tasks per vessel
@@ -683,8 +738,8 @@ app.post("/api/endpoints/:id/field", requireAuth, (req, res) => {
     res.json({ok: true, endpoint: ep});
 });
 
-function findTask(id) {
-    return tasks.find((t) => String(t.id) === String(id));
+async function findTask(id) {
+    return await dbStorage.getTask(id);
 }
 
 function findCommentById(task, commentId) {
@@ -726,11 +781,10 @@ function findCommentById(task, commentId) {
 //   res.json({ ok: true, comment: entry });
 // });
 
-app.post("/api/tasks/:id/comment", requireAuth, // all roles can comment
-    (req, res) => {
-        const taskId = Number(req.params.id);
+app.post("/api/tasks/:id/comment", requireAuth, async (req, res) => {
+    try {
         const {comment, parentId} = req.body || {};
-        const task = findTask(taskId);
+        const task = await findTask(req.params.id);
         if (!task) {
             return res.status(404).json({error: "Task not found"});
         }
@@ -744,16 +798,12 @@ app.post("/api/tasks/:id/comment", requireAuth, // all roles can comment
             role: req.user.role,
             authorId: req.user.id,
             authorName: req.user.name,
-            parentId: parentId || null,
-            timestamp: new Date().toISOString()
+            parentId: parentId || null
         };
 
-        task.comments = task.comments || [];
-        task.comments.push(newComment);
-
-        addLog(task.vesselId, `${req.user.role} added a comment on task "${task.title}"`, req);
-
-        broadcastSnapshot();
+        await dbStorage.addComment(task.id, newComment);
+        await addLog(task.vesselId, `${req.user.role} added a comment on task "${task.title}"`, req);
+        await broadcastSnapshot();
         
         sendNotification('COMMENT_ADDED', {
             taskTitle: task.title,
@@ -761,7 +811,11 @@ app.post("/api/tasks/:id/comment", requireAuth, // all roles can comment
         });
         
         res.json(newComment);
-    });
+    } catch (err) {
+        console.error('Error adding comment:', err);
+        res.status(500).json({error: "Failed to add comment"});
+    }
+});
 
 app.put("/api/comment/:id", requireAuth, requireRole('Admin'), (req, res) => {
     const {comment} = req.body;
@@ -910,107 +964,121 @@ app.post("/api/tasks/reorder", requireAuth, (req, res) => {
     res.json({ok: true});
 });
 
-app.post("/api/tasks/:id/start", requireAuth, requireRole("Admin", "Onboard Eng", "Remote Team"), (req, res) => {
-    const task = findTask(req.params.id);
-    if (!task) return res.status(404).json({error: "Task not found"});
+app.post("/api/tasks/:id/start", requireAuth, requireRole("Admin", "Onboard Eng", "Remote Team"), async (req, res) => {
+    try {
+        const task = await findTask(req.params.id);
+        if (!task) return res.status(404).json({error: "Task not found"});
 
-    // Only one active per vessel
-    // tasks.forEach((t) => {
-    //   if (t.vesselId === task.vesselId && t.status === "in_progress") {
-    //     t.status = "pending";
-    //   }
-    // });
-    const isAdminOrEngineer = req.user.role === "Admin" || req.user.role === "Onboard Eng";
+        const isAdminOrEngineer = req.user.role === "Admin" || req.user.role === "Onboard Eng";
 
-    if (task.assignedTo !== req.user.id && !isAdminOrEngineer) {
-        return res.status(403).json({error: "You are not assigned to this task."});
+        if (task.assignedTo !== req.user.id && !isAdminOrEngineer) {
+            return res.status(403).json({error: "You are not assigned to this task."});
+        }
+
+        if (task.status !== "pending" && task.status !== "paused") {
+            return res.status(400).json({error: "Task cannot be started from this state."});
+        }
+
+        await dbStorage.updateTask(task.id, { status: "in_progress" });
+        const vessel = await dbStorage.getVessel(task.vesselId);
+        if (vessel && vessel.status === "not_started") {
+            await dbStorage.updateVessel(vessel.id, { status: "in_progress" });
+        }
+
+        await addLog(task.vesselId, `${req.user.name} started "${task.title}"`, req);
+        await broadcastSnapshot();
+        
+        sendNotification('TASK_STARTED', {
+            taskTitle: task.title,
+            expectedTime: task.deadline_seconds
+        });
+        
+        const updatedTask = await findTask(req.params.id);
+        res.json(updatedTask);
+    } catch (err) {
+        console.error('Error starting task:', err);
+        res.status(500).json({error: "Failed to start task"});
     }
-
-    if (task.status !== "pending" && task.status !== "paused") {
-        return res.status(400).json({error: "Task cannot be started from this state."});
-    }
-
-    task.status = "in_progress";
-    const vessel = vessels.find((v) => v.id === task.vesselId);
-    if (vessel && vessel.status === "not_started") vessel.status = "in_progress";
-
-    addLog(task.vesselId, `${req.user.name} ${task.status === "paused" ? "resumed" : "started"} "${task.title}"`, req);
-    broadcastSnapshot();
-    
-    sendNotification('TASK_STARTED', {
-        taskTitle: task.title,
-        expectedTime: task.deadline_seconds
-    });
-    
-    res.json(task);
 });
 
-app.post("/api/tasks/:id/pause", requireAuth, (req, res) => {
-    const taskId = Number(req.params.id);
-    const task = findTask(taskId);
-    if (!task) return res.status(404).json({error: "Task not found"});
+app.post("/api/tasks/:id/pause", requireAuth, async (req, res) => {
+    try {
+        const task = await findTask(req.params.id);
+        if (!task) return res.status(404).json({error: "Task not found"});
 
-    const isAdminOrEngineer = req.user.role === "Admin" || req.user.role === "Onboard Eng";
+        const isAdminOrEngineer = req.user.role === "Admin" || req.user.role === "Onboard Eng";
 
-    if (task.assignedTo !== req.user.id && !isAdminOrEngineer) {
-        return res.status(403).json({error: "You are not assigned to this task."});
+        if (task.assignedTo !== req.user.id && !isAdminOrEngineer) {
+            return res.status(403).json({error: "You are not assigned to this task."});
+        }
+
+        if (task.status !== "in_progress") {
+            return res.status(400).json({error: "Only an in-progress task can be paused."});
+        }
+
+        await dbStorage.updateTask(task.id, { status: "paused" });
+        await addLog(task.vesselId, `${req.user.name} paused "${task.title}"`, req);
+        await broadcastSnapshot();
+        
+        sendNotification('TASK_PAUSED', {
+            taskTitle: task.title
+        });
+        
+        res.json({success: true, taskId: task.id});
+    } catch (err) {
+        console.error('Error pausing task:', err);
+        res.status(500).json({error: "Failed to pause task"});
     }
-
-    if (task.status !== "in_progress") {
-        return res
-            .status(400)
-            .json({error: "Only an in-progress task can be paused."});
-    }
-
-    task.status = "paused";
-
-    addLog(task.vesselId, `${req.user.name} paused "${task.title}"`, req);
-
-    broadcastSnapshot();
-    
-    sendNotification('TASK_PAUSED', {
-        taskTitle: task.title
-    });
-    
-    res.json({success: true, taskId: task.id});
 });
 
 
-app.post("/api/tasks/:id/done", requireAuth, requireRole("Admin", "Onboard Eng", "Remote Team"), (req, res) => {
-    const task = findTask(req.params.id);
-    if (!task) return res.status(404).json({error: "Task not found"});
-    if (task.status !== "in_progress" && task.status !== "paused") {
-        return res.status(400).json({error: "Only active or paused tasks can be marked done."});
-    }
-    task.status = "done";
-    addLog(task.vesselId, `Task Done Task "${task.title}" completed.`, req);
+app.post("/api/tasks/:id/done", requireAuth, requireRole("Admin", "Onboard Eng", "Remote Team"), async (req, res) => {
+    try {
+        const task = await findTask(req.params.id);
+        if (!task) return res.status(404).json({error: "Task not found"});
+        if (task.status !== "in_progress" && task.status !== "paused") {
+            return res.status(400).json({error: "Only active or paused tasks can be marked done."});
+        }
+        
+        await dbStorage.updateTask(task.id, { status: "done" });
+        await addLog(task.vesselId, `Task Done Task "${task.title}" completed.`, req);
 
-    const vesselTasks = tasks.filter((t) => t.vesselId === task.vesselId);
-    const vessel = vessels.find((v) => v.id === task.vesselId);
-    if (vesselTasks.every((t) => t.status === "done")) {
-        if (vessel) vessel.status = "completed";
-    }
+        const vesselTasks = await dbStorage.getTasks(task.vesselId);
+        const vessel = await dbStorage.getVessel(task.vesselId);
+        if (vesselTasks.every((t) => t.status === "done")) {
+            if (vessel) await dbStorage.updateVessel(vessel.id, { status: "completed" });
+        }
 
-    broadcastSnapshot();
-    
-    sendNotification('TASK_DONE', {
-        taskTitle: task.title
-    });
-    
-    res.json(task);
+        await broadcastSnapshot();
+        
+        sendNotification('TASK_DONE', {
+            taskTitle: task.title
+        });
+        
+        const updatedTask = await findTask(req.params.id);
+        res.json(updatedTask);
+    } catch (err) {
+        console.error('Error completing task:', err);
+        res.status(500).json({error: "Failed to complete task"});
+    }
 });
 
-app.post("/api/tasks/:id/upload", requireAuth, upload.single("file"), (req, res) => {
-    const task = findTask(req.params.id);
-    if (!task) return res.status(404).json({error: "Task not found"});
-    if (!task.attachments) task.attachments = [];
-    const url = `/uploads/${req.file.filename}`;
-    task.attachments.push({
-        url, originalName: req.file.originalname, uploadedAt: new Date().toISOString()
-    });
-    addLog(task.vesselId, `Attachment Added Screenshot uploaded for "${task.title}".`, req);
-    broadcastSnapshot();
-    res.json({ok: true, url});
+app.post("/api/tasks/:id/upload", requireAuth, upload.single("file"), async (req, res) => {
+    try {
+        const task = await findTask(req.params.id);
+        if (!task) return res.status(404).json({error: "Task not found"});
+        const url = `/uploads/${req.file.filename}`;
+        await dbStorage.addAttachment(task.id, {
+            url,
+            originalName: req.file.originalname
+        });
+        await addLog(task.vesselId, `Attachment Added Screenshot uploaded for "${task.title}".`, req);
+        await broadcastSnapshot();
+        res.json({ok: true, url});
+    } catch (err) {
+        console.error('Error uploading file:', err);
+        res.status(500).json({error: "Failed to upload file"});
+    }
 });
 
 function canControlEndpoint(endpoint, user) {
@@ -1114,6 +1182,7 @@ app.get("/api/whatsapp/qr", requireAuth, requireRole("Admin"), (req, res) => {
 
 app.post("/api/whatsapp/init", requireAuth, requireRole("Admin"), (req, res) => {
     initWhatsApp();
+    scheduleReconnect();
     res.json({ message: "WhatsApp initialization started" });
 });
 

@@ -6,7 +6,7 @@ A vessel takeover task management system for iShip/OneSea. It allows tracking ta
 ## Project Architecture
 - **Frontend**: React + Vite (port 5000)
 - **Backend**: Express + Socket.IO (port 3001)
-- **Database**: In-memory (no persistent database)
+- **Database**: PostgreSQL with Drizzle ORM (persistent data storage)
 
 ## Directory Structure
 ```
@@ -18,9 +18,23 @@ A vessel takeover task management system for iShip/OneSea. It allows tracking ta
 │   └── vite.config.js
 ├── server/           # Express backend
 │   ├── server.js     # Main server with API routes
+│   ├── db.js         # Database connection
+│   ├── schema.js     # Drizzle ORM schema definitions
+│   ├── storage.js    # Database storage layer
+│   ├── whatsappService.js  # WhatsApp integration
 │   └── uploads/      # Uploaded files storage
+├── drizzle.config.js # Drizzle configuration
 └── package.json      # Root package with dev scripts
 ```
+
+## Database Schema
+Tables managed by Drizzle ORM:
+- **vessels**: id, name, imo, hidden, createdAt
+- **tasks**: id, vesselId, title, status, expectedTime, comments (JSONB), files (JSONB), history, timers
+- **taskComments**: id, taskId, text, authorId, authorName, role, parentId, createdAt
+- **taskAttachments**: id, taskId, filename, path, createdAt
+- **endpoints**: id, vesselId, name, ip, assignedTo, status, history, timers
+- **logs**: id, vesselId, action, ip, userAgent, createdAt
 
 ## Running the App
 The app runs with two workflows:
@@ -29,10 +43,15 @@ The app runs with two workflows:
 
 ## Authentication
 Users log in with a password only. Roles:
-- **Admin**: Full access to all features
+- **Admin**: Full access to all features, can hide/show vessels
 - **Onboard Eng**: Can manage tasks and endpoints
 - **Remote Team**: Can add tasks and comments
 - **Client**: View-only with commenting ability
+
+## Vessel Visibility
+- Admins can hide vessels from non-admin users
+- Hidden vessels show "(Hidden)" badge in the vessel list
+- Use the eye icon button to toggle visibility
 
 ## API Configuration
 The frontend uses Vite's proxy to route API requests to the backend:
@@ -51,23 +70,30 @@ The system supports WhatsApp notifications via QR code authentication:
 
 ### Notifications
 WhatsApp messages are sent when:
-- A task is started
+- A task is started (includes expected time)
 - A task is paused
 - A task is completed
 - A comment is added to a task
 
+### Auto-Reconnect
+- WhatsApp automatically reconnects every 4-6 hours to avoid being marked as suspicious
+- Session data stored in `.wwebjs_auth/` directory
+
 ### Technical Details
 - Uses whatsapp-web.js library with Puppeteer
-- Session data stored in `.wwebjs_auth/` directory
 - Admin-only API routes: `/api/whatsapp/*`
 - Service file: `server/whatsappService.js`
 
 ## Recent Changes
+- 2025-12-24: Migrated to PostgreSQL database
+  - Added Drizzle ORM with proper schema
+  - Created storage.js abstraction layer
+  - Data now persists between restarts
+- 2025-12-24: Added vessel hide/show feature
+  - Admins can hide vessels from non-admin users
+  - Eye icon button in vessel card for toggling
+- 2025-12-24: WhatsApp improvements
+  - Simplified notification messages
+  - Added auto-reconnect scheduler (4-6 hours)
 - 2025-12-23: Added WhatsApp integration with QR code authentication
-  - Created WhatsApp service module with notification templates
-  - Added admin-only WhatsApp settings tab
-  - Integrated notifications into task actions
 - 2025-12-23: Configured for Replit environment
-  - Updated Vite config with proxy and allowed hosts
-  - Changed server port to 3001
-  - Updated frontend to use relative URLs through proxy
