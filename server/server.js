@@ -616,6 +616,16 @@ app.get("/api/health", (req, res) => {
     });
 });
 
+// Root endpoint - serve index.html or return 200 for health checks
+app.get("/", (req, res) => {
+    const indexPath = path.join(clientDistPath, "index.html");
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.status(200).send("<!DOCTYPE html><html><head><title>Vessel Takeover</title></head><body><h1>iShip Vessel Takeover System</h1><p>Server running. Frontend available in development mode.</p></body></html>");
+    }
+});
+
 // Vessels
 app.get("/api/vessels", async (req, res) => {
     try {
