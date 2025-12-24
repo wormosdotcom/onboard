@@ -57,4 +57,4 @@ externalPort = 80
 [deployment]
 deploymentTarget = "vm"
 run = ["bash", "-c", "cd server && node server.js"]
-build = ["bash", "-c", "npm ci --prefix client && npm run build --prefix client && npm ci --prefix server"]
+build = ["bash", "-c", "cd client && npm install && npm run build && cd ../server && npm install"]
