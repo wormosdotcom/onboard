@@ -88,7 +88,14 @@ export default function App() {
     const [uploadingTaskId, setUploadingTaskId] = useState(null);
     const [collapsedComments, setCollapsedComments] = useState({});
     const [previewImage, setPreviewImage] = useState(null);
-    const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [sidebarOpen, setSidebarOpen] = useState(() => {
+        if (typeof window === "undefined") return true;
+        return window.innerWidth > 900;
+    });
+    const [isMobile, setIsMobile] = useState(() => {
+        if (typeof window === "undefined") return false;
+        return window.innerWidth <= 900;
+    });
     const [activeTab, setActiveTab] = useState("tasks"); // tasks | endpoints | activity | whatsapp
     
     const [whatsappStatus, setWhatsappStatus] = useState(null);
@@ -157,6 +164,32 @@ export default function App() {
             console.warn("Failed to clear session", e);
         }
     };
+
+    useEffect(() => {
+        if (typeof window === "undefined") return undefined;
+        const handleResize = () => setIsMobile(window.innerWidth <= 900);
+        window.addEventListener("resize", handleResize);
+        return () => window.removeEventListener("resize", handleResize);
+    }, []);
+
+    useEffect(() => {
+        if (!isMobile) {
+            setSidebarOpen(true);
+        }
+    }, [isMobile]);
+
+    useEffect(() => {
+        if (typeof document === "undefined") return undefined;
+        const previous = document.body.style.overflow;
+        if (sidebarOpen && isMobile) {
+            document.body.style.overflow = "hidden";
+        } else {
+            document.body.style.overflow = "";
+        }
+        return () => {
+            document.body.style.overflow = previous;
+        };
+    }, [sidebarOpen, isMobile]);
 
     const fetchWhatsAppStatus = async () => {
         if (!auth?.token) return;
@@ -875,31 +908,38 @@ export default function App() {
     return (<div className="app-shell">
         {/* Passcode Modal */}
         <header className="top-bar">
-            <div>
-                <h1 style={{color: "#2c587c"}}>
-                    <img src="/logo.png" alt="Logo"
-                         style={{height: "22px", marginRight: "8px", verticalAlign: "middle"}}/>
-                    iShip × OneSea Vessel Takeover
-                </h1>
-                <p className="subtitle">
-                    Live checklist, timers, comments, screenshots &amp; audit trail.
-                </p>
+            <div className="brand-row">
+                {isMobile && (<button
+                    className="mobile-menu-btn"
+                    onClick={() => setSidebarOpen(true)}
+                    aria-label="Open vessel list"
+                >
+                    ☰
+                </button>)}
+                <div>
+                    <h1 style={{color: "#2c587c"}}>
+                        <img src="/logo.png" alt="Logo"
+                             style={{height: "22px", marginRight: "8px", verticalAlign: "middle"}}/>
+                        iShip × OneSea Vessel Takeover
+                    </h1>
+                    <p className="subtitle">
+                        Live checklist, timers, comments, screenshots &amp; audit trail.
+                    </p>
+                </div>
             </div>
             <div className="top-right">
-                <div className="top-right">
-                    <div className="chip">
-                        {auth.name} • {auth.role}
-                    </div>
-                    <button
-                        className="export-btn"
-                        onClick={handleExportPDF}
-                    >
-                        📄 Export PDF
-                    </button>
-                    <button className="export-btn" onClick={handleLogout}>
-                        Logout
-                    </button>
+                <div className="chip">
+                    {auth.name} • {auth.role}
                 </div>
+                <button
+                    className="export-btn"
+                    onClick={handleExportPDF}
+                >
+                    📄 Export PDF
+                </button>
+                <button className="export-btn" onClick={handleLogout}>
+                    Logout
+                </button>
             </div>
         </header>
 
@@ -913,7 +953,8 @@ export default function App() {
                     <div className="vessel-header-actions">
                         {isAdminOrEngineer ?
                             <button className="add-vessel-mini" onClick={handleAddVessel}>＋</button> : null}
-                        <button className="sidebar-collapse-btn" onClick={() => setSidebarOpen(false)}>⇤
+                        <button className="sidebar-collapse-btn" onClick={() => setSidebarOpen(false)}>
+                            {isMobile ? "✕" : "⇤"}
                         </button>
                     </div>
                 </div>
@@ -982,9 +1023,17 @@ export default function App() {
                     {vessels.length === 0 && (<p className="empty-state">No vessels yet. Add one.</p>)}
                 </div>
             </aside>)}
+            {sidebarOpen && isMobile && (<div
+                className="sidebar-backdrop"
+                onClick={() => setSidebarOpen(false)}
+            />)}
 
             {/* Toggle button when sidebar closed */}
-            {!sidebarOpen && (<button className="sidebar-toggle-floating" onClick={() => setSidebarOpen(true)}>
+            {!sidebarOpen && (<button
+                className="sidebar-toggle-floating"
+                onClick={() => setSidebarOpen(true)}
+                aria-label="Open vessels drawer"
+            >
                 ☰
             </button>)}
 
@@ -1434,8 +1483,8 @@ export default function App() {
                                         const statusLabel = epStatus === "in_progress" ? "In Progress" : epStatus === "paused" ? "Paused" : epStatus === "done" ? "Done" : "Not Started";
 
                                         return (<tr key={ep.id}>
-                                            <td className="endpoint-label">{ep.label}</td>
-                                            {!isClient ? <td>
+                                            <td className="endpoint-label" data-label="Endpoint">{ep.label}</td>
+                                            {!isClient ? <td data-label="Assignee">
                                                 {/* Only Admin or Onboard Eng can change the assignee */}
                                                 {(auth?.role === "Admin" || auth?.role === "Onboard Eng") ? (
                                                     <select
@@ -1465,6 +1514,7 @@ export default function App() {
                                                 const val = ep.fields?.[fieldKey] || "pending";
                                                 return (<td
                                                     key={fieldKey}
+                                                    data-label={ENDPOINT_FIELD_LABELS[fieldKey] || fieldKey}
                                                     className={"endpoint-cell status-" + val + (!isClient ? " clickable" : "")}
                                                     onClick={!isClient ? () => handleEndpointFieldChange(ep.id, fieldKey, assignedUser) : undefined}
                                                 >
@@ -1472,7 +1522,7 @@ export default function App() {
                                                 </td>);
                                             })}
 
-                                            <td className="endpoint-timer-cell">
+                                            <td className="endpoint-timer-cell" data-label="Timer / Status">
                                                 <div className="endpoint-timer-info small">
                                                     <span>{formatTime(ep.elapsedSeconds || 0)}</span>
                                                     <span className="muted" style={{marginLeft: 6}}>
@@ -1650,11 +1700,6 @@ export default function App() {
                                         )}
                                     </div>
                                 )}
-
-                                <div style={{marginTop: "30px", padding: "15px", background: "#fef3c7", borderRadius: "8px"}}>
-                                    <strong>Note:</strong> WhatsApp doesn't officially support bots. 
-                                    Use a secondary number to avoid any issues with your main account.
-                                </div>
                             </section>
                         </div>
                     )}
